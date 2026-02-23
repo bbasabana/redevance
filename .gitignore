@@ -34,3 +34,21 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# environment variables
+.env
+.env.*
+!.env.example
+
+# scratch files & logs
+dev.log
+error.txt
+error.html
+*.log
+DONE.md
+Done2.md
+Done3.md
+TASKS_REDEVANCE.md
+test-query*.ts
+verify-*.ts
+prd.md

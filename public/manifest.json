@@ -1,0 +1,23 @@
+{
+    "name": "Redevance RTNC",
+    "short_name": "Redevance",
+    "description": "Système de Gestion de la Redevance Audiovisuelle",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0F1C3F",
+    "theme_color": "#0F1C3F",
+    "icons": [
+        {
+            "src": "/logos/logo.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/logos/logo.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
