@@ -3,6 +3,8 @@
 Système professionnel de gestion et de collecte des redevances audiovisuelles pour la **Radio Télévision Nationale Congolaise (RTNC)**.
 
 ![Premium Dashboard Aesthetic](https://img.shields.io/badge/Aesthetic-Industrial_Technical-0d2870?style=for-the-badge)
+![Neon Database](https://img.shields.io/badge/Neon-Database_Cloud-00E599?style=for-the-badge&logo=neon)
+![Drizzle ORM](https://img.shields.io/badge/Drizzle-ORM-C5F74F?style=for-the-badge&logo=drizzle)
 ![Next.js](https://img.shields.io/badge/Next.js_14-black?style=for-the-badge&logo=next.js)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css)
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript)
@@ -25,7 +27,8 @@ Système professionnel de gestion et de collecte des redevances audiovisuelles p
 - **Frontend** : Next.js 14 (App Router), React, Tailwind CSS, Framer Motion.
 - **UI Components** : Shadcn UI (Radix UI), Lucide Icons.
 - **Backend/Logic** : Server Actions, Next-Auth v5 (Auth.js).
-- **Base de Données** : PostgreSQL via Drizzle ORM.
+- **Base de Données** : **PostgreSQL** hébergé sur **Neon Database Cloud** (Serverless).
+- **ORM** : **Drizzle ORM** pour des requêtes typées et ultra-rapides.
 - **Stockage** : EdgeStore pour les documents PDF et justificatifs.
 - **Sécurité** : Chiffrement AES-256-CBC, Hachage Argon2.
 
