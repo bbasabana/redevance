@@ -9,7 +9,7 @@ Système professionnel de gestion et de collecte des redevances audiovisuelles p
 
 ## 🚀 Vue d'ensemble
 
-**Meyllos Redevance** est une plateforme SaaS de pointe conçue pour moderniser la fiscalité audiovisuelle en RDC. Elle offre une interface robuste pour les assujettis (particuliers et entreprises) et un centre de contrôle administratif pour le suivi des recouvrements.
+**RTNC Redevance** est une plateforme SaaS de pointe conçue pour moderniser la fiscalité audiovisuelle en RDC. Elle offre une interface robuste pour les assujettis (particuliers et entreprises) et un centre de contrôle administratif pour le suivi des recouvrements.
 
 ### ✨ Fonctionnalités Clés
 
