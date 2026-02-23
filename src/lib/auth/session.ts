@@ -1,5 +1,10 @@
+"use server";
+
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { db } from "@/db";
+import { appUsers, adminUsers } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 // Generate a secret key from an environment variable (you MUST set AUTH_SECRET in .env)
 const secretKey = process.env.AUTH_SECRET || "default_super_secret_key_change_me_in_production";
@@ -97,4 +102,35 @@ export async function getSession(): Promise<{ user: SessionPayload } | null> {
 
 export async function clearSession() {
     cookies().delete("auth_session");
+}
+
+/**
+ * Fetches the 2FA enablement status for a user from the database.
+ * Checks both appUsers and adminUsers.
+ */
+export async function getUser2FaStatus(userId: string): Promise<boolean> {
+    try {
+        // Try appUsers first
+        const [appUser] = await db
+            .select({ twoFactorEnabled: appUsers.twoFactorEnabled })
+            .from(appUsers)
+            .where(eq(appUsers.id, userId))
+            .limit(1);
+
+        if (appUser) return appUser.twoFactorEnabled;
+
+        // Try adminUsers
+        const [adminUser] = await db
+            .select({ twoFactorEnabled: adminUsers.twoFactorEnabled })
+            .from(adminUsers)
+            .where(eq(adminUsers.id, userId))
+            .limit(1);
+
+        if (adminUser) return adminUser.twoFactorEnabled;
+
+        return false;
+    } catch (error) {
+        console.error("Error fetching 2FA status:", error);
+        return false;
+    }
 }

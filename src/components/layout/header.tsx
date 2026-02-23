@@ -13,9 +13,10 @@ import { signOut } from "next-auth/react";
 interface HeaderProps {
     userName?: string;
     userTitle?: string;
+    showLogo?: boolean;
 }
 
-export function Header({ userName, userTitle }: HeaderProps) {
+export function Header({ userName, userTitle, showLogo = true }: HeaderProps) {
     const [mounted, setMounted] = useState(false);
     const [isLogoutOpen, setIsLogoutOpen] = useState(false);
 
@@ -27,9 +28,11 @@ export function Header({ userName, userTitle }: HeaderProps) {
         return (
             <header className="h-16 bg-white sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
                 <div className="flex items-center gap-6 flex-1">
-                    <div className="block shrink-0">
-                        <div className="h-7 w-[100px] bg-slate-100 rounded-md" />
-                    </div>
+                    {showLogo && (
+                        <div className="block shrink-0">
+                            <div className="h-7 w-[100px] bg-slate-100 rounded-md" />
+                        </div>
+                    )}
                     <div className="relative max-w-md w-full hidden md:block">
                         <div className="pl-10 h-9 bg-slate-50 border-none rounded-md" />
                     </div>
@@ -51,16 +54,18 @@ export function Header({ userName, userTitle }: HeaderProps) {
     return (
         <header className="h-16 bg-white sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
             <div className="flex items-center gap-6 flex-1">
-                <Link href="/assujetti/dashboard" className="block shrink-0">
-                    <Image
-                        src="/logos/logo.png"
-                        alt="RTNC Logo"
-                        width={100}
-                        height={28}
-                        className="h-auto w-auto"
-                        priority
-                    />
-                </Link>
+                {showLogo && (
+                    <Link href="/assujetti/dashboard" className="block shrink-0">
+                        <Image
+                            src="/logos/logo.png"
+                            alt="RTNC Logo"
+                            width={100}
+                            height={28}
+                            className="h-auto w-auto"
+                            priority
+                        />
+                    </Link>
+                )}
                 <div className="relative max-w-md w-full hidden md:block">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <Input

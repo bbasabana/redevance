@@ -6,6 +6,8 @@ import { eq } from "drizzle-orm";
 import { verify } from "otplib";
 import { getPendingAuthCookie, createFullSession, clearPendingAuthCookie, getSession } from "@/lib/auth/session";
 import { getAuthRedirect } from "@/lib/auth/get-auth-redirect";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 export async function setupTotpAction(code: string, secret: string) {
     // Determine the user's ID and role from either pending cookie (first login/login without 2fa)
@@ -45,11 +47,20 @@ export async function setupTotpAction(code: string, secret: string) {
         return { error: 'Code incorrect.' };
     }
 
+    // Generate recovery codes
+    const rawRecoveryCodes = Array.from({ length: 10 }, () =>
+        crypto.randomBytes(4).toString('hex').toUpperCase()
+    );
+    const hashedRecoveryCodes = await Promise.all(
+        rawRecoveryCodes.map(code => bcrypt.hash(code, 10))
+    );
+
     // Save the secret and mark 2FA as enabled
     const updateData = {
         twoFactorEnabled: true,
-        twoFactorSecret: secret, // In production you would encrypt this
-        mustSetup2Fa: false, // In case this was a forced setup
+        twoFactorSecret: secret,
+        recoveryCodes: hashedRecoveryCodes,
+        mustSetup2Fa: false,
     };
 
     if (isAppUser) {
@@ -68,6 +79,9 @@ export async function setupTotpAction(code: string, secret: string) {
     user.mustSetup2Fa = false;
     user.role = userRole;
 
-    const redirectUrl = await getAuthRedirect(user);
-    return { redirectUrl };
+    const redirectUrl = await getAuthRedirect(user, true);
+    return {
+        redirectUrl,
+        recoveryCodes: rawRecoveryCodes
+    };
 }

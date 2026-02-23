@@ -38,22 +38,6 @@ export default function RootLayout({
           {children}
           <Toaster position="bottom-right" />
         </Providers>
-        {process.env.NODE_ENV === "development" && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                if ('serviceWorker' in navigator) {
-                  navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                    for(let registration of registrations) {
-                      registration.unregister();
-                      console.log("Unregistered stale service worker");
-                    }
-                  });
-                }
-              `,
-            }}
-          />
-        )}
       </body>
     </html>
   );

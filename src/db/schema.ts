@@ -20,6 +20,8 @@ export const typeActiviteEnum = pgEnum("type_activite_enum", ["hotel", "restaura
 export const sousTypePmEnum = pgEnum("sous_type_pm_enum", ["pmta", "ppta", "pm"]);
 export const onboardingStatusEnum = pgEnum("onboarding_status_enum", ["pending", "step_1_done", "step_2_done", "step_3_done", "completed"]);
 export const validationStatusEnum = pgEnum("validation_status_enum", ["pending", "validated", "rejected", "none"]);
+export const statutControleTerrainEnum = pgEnum("statut_controle_terrain_enum", ["en_cours", "finalise", "pv_genere"]);
+export const statutPaiementTerrainEnum = pgEnum("statut_paiement_terrain_enum", ["non_paye", "paye", "en_attente"]);
 
 export const geographyTypeEnum = pgEnum("geography_type_enum", [
     "PROVINCE", "VILLE", "TERRITOIRE", "CITE", "SECTEUR", "CHEFFERIE", "COMMUNE", "QUARTIER", "GROUPEMENT"
@@ -90,6 +92,8 @@ export const adminUsers = pgTable("admin_users", {
 // Assujettis, Agents, Controllers, etc.
 export const appUsers = pgTable("app_users", {
     ...getCommonAuthFields(),
+    identifiantAgent: varchar("identifiant_agent", { length: 50 }).unique(),
+    assignedCommuneId: uuid("assigned_commune_id").references(() => geographies.id),
 });
 
 // Relation M:M for RBAC on app_users
@@ -190,9 +194,7 @@ export const declarations = pgTable("declarations", {
 export const lignesDeclaration = pgTable("lignes_declaration", {
     id: uuid("id").primaryKey().defaultRandom(),
     declarationId: uuid("declaration_id").references(() => declarations.id),
-    categorieAppareil: varchar("categorie_appareil", { length: 100 }).notNull(),
-    sousCategorie: varchar("sous_categorie", { length: 100 }),
-    operateur: varchar("operateur", { length: 100 }),
+    categorieAppareil: varchar("categorie_appareil", { length: 100 }).notNull(), // Restrict to "Televiseur", "Radio" in logic
     nombre: integer("nombre").notNull(),
     tarifUnitaire: decimal("tarif_unitaire", { precision: 10, scale: 2 }),
     montantLigne: decimal("montant_ligne", { precision: 10, scale: 2 }),
@@ -315,6 +317,43 @@ export const notesRectificatives = pgTable("notes_rectificatives", {
     penalites: decimal("penalites", { precision: 10, scale: 2 }).notNull(),
     motif: text("motif").notNull(),
     statut: statutNoteEnum("statut").default("brouillon"),
+    createdAt: timestamp("created_at").defaultNow(),
+});
+
+// --- FIELD OPERATIONS (MOBILE APP) ---
+
+export const controlesTerrain = pgTable("controles_terrain", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    assujettiId: uuid("assujetti_id").references(() => assujettis.id).notNull(),
+    agentId: uuid("agent_id").references(() => appUsers.id).notNull(),
+    exercice: integer("exercice").notNull(),
+    nbTvDeclare: integer("nb_tv_declare").notNull(),
+    nbRadioDeclare: integer("nb_radio_declare").notNull(),
+    nbTvConstate: integer("nb_tv_constate").notNull(),
+    nbRadioConstate: integer("nb_radio_constate").notNull(),
+    ecartTv: integer("ecart_tv").notNull(),
+    ecartRadio: integer("ecart_radio").notNull(),
+    activitesConstatees: jsonb("activites_constatees").default([]),
+    precisionAutre: text("precision_autre"),
+    adresseConstatee: text("adresse_constatee"),
+    statut: statutControleTerrainEnum("statut").default("en_cours").notNull(),
+    observations: text("observations"),
+    dateControle: timestamp("date_controle").defaultNow(),
+    geolocalisation: jsonb("geolocalisation"), // { lat, lng }
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").$onUpdate(() => new Date()),
+});
+
+export const notesRectificativesTerrain = pgTable("notes_rectificatives_terrain", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    controleId: uuid("controle_id").references(() => controlesTerrain.id).notNull(),
+    assujettiId: uuid("assujetti_id").references(() => assujettis.id).notNull(),
+    montantEcart: decimal("montant_ecart", { precision: 10, scale: 2 }).notNull(),
+    montantPenalite: decimal("montant_penalite", { precision: 10, scale: 2 }).notNull(),
+    montantTotal: decimal("montant_total", { precision: 10, scale: 2 }).notNull(),
+    statutPaiement: statutPaiementTerrainEnum("statut_paiement").default("non_paye").notNull(),
+    referencePaiement: varchar("reference_paiement", { length: 100 }),
+    datePaiement: timestamp("date_paiement"),
     createdAt: timestamp("created_at").defaultNow(),
 });
 

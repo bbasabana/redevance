@@ -144,6 +144,7 @@ export default function PaymentPage() {
                                 <div className="p-4 bg-slate-50/50 rounded-lg border border-transparent hover:border-[#0d2870]/10 hover:bg-white transition-all">
                                     <Label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">Assujetti / Redevable</Label>
                                     <p className="text-md font-black text-slate-900 tracking-tight uppercase leading-none">{data.assujetti.nomRaisonSociale}</p>
+                                    <p className="text-[10px] font-bold text-[#0d2870] uppercase mt-2">ID FISCAL : {data.assujetti.identifiantFiscal}</p>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
@@ -166,10 +167,6 @@ export default function PaymentPage() {
                                         <TaxationQRCode data={data.qrData} size={110} />
                                     </div>
                                 </div>
-                                <p className="text-[9px] font-black text-[#0d2870] uppercase tracking-widest mt-4 flex items-center gap-2">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                    Validation QR v1.0
-                                </p>
                             </div>
 
                             {/* Right: Amount Display Block */}

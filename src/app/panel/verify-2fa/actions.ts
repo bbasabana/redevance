@@ -54,6 +54,6 @@ export async function verifyTotpAction(code: string) {
 
     // Rediriger selon rôle + état identification
     // We can reuse getAuthRedirect because getAuthRedirect returns dashboard/identification based on role and active status
-    const redirectUrl = await getAuthRedirect(user);
+    const redirectUrl = await getAuthRedirect(user, true);
     return { redirectUrl };
 }

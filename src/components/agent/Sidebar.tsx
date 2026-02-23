@@ -91,20 +91,33 @@ export function Sidebar() {
                 </nav>
             </div>
 
-            <div className="mt-auto p-6 border-t border-slate-100">
-                <div className="bg-slate-50 p-4 rounded-2xl mb-4">
-                    <div className="flex items-center gap-3 mb-1">
-                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                        <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500">
-                            Agent de Terrain
-                        </span>
+            <div className="mt-auto p-4 border-t border-slate-100">
+                <div className="bg-slate-50/50 border border-slate-100 p-4 rounded-2xl mb-2 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-[#0d2870]/5 rounded-full -translate-y-8 translate-x-8" />
+                    <div className="flex items-center gap-3 relative z-10">
+                        <div className="w-10 h-10 rounded-xl bg-[#0d2870] flex items-center justify-center text-white font-black text-xs shadow-lg shadow-blue-900/20">
+                            AG
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                <span className="text-[9px] uppercase font-black tracking-[0.15em] text-slate-400">
+                                    Agent de Terrain
+                                </span>
+                            </div>
+                            <p className="text-xs font-black text-slate-900 truncate uppercase tracking-tight">Utilisateur Redevance</p>
+                        </div>
                     </div>
-                    <p className="text-sm font-bold text-slate-900 truncate">Utilisateur Redevance</p>
                 </div>
 
-                <button className="flex items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm font-medium text-slate-600 hover:bg-red-50 hover:text-red-600 transition-all">
-                    <LogOut className="w-5 h-5" />
-                    Déconnexion
+                <button className="flex items-center justify-between px-4 py-3 w-full rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all group border border-transparent hover:border-red-100">
+                    <span className="flex items-center gap-2">
+                        <LogOut className="w-4 h-4" />
+                        Déconnexion
+                    </span>
+                    <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center group-hover:bg-red-100 transition-colors">
+                        <div className="w-1 h-1 rounded-full bg-slate-300 group-hover:bg-red-400" />
+                    </div>
                 </button>
             </div>
         </div>
