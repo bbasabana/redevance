@@ -52,3 +52,5 @@ TASKS_REDEVANCE.md
 test-query*.ts
 verify-*.ts
 prd.md
+
+/mobile
