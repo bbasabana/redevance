@@ -6,6 +6,7 @@ import { paiements, notesTaxation, assujettis } from "@/db/schema";
 import { eq, sum, and } from "drizzle-orm";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { sendPaymentConfirmationSms } from "@/lib/sms/messagebird";
 
 const paymentSchema = z.object({
     noteTaxationId: z.string().uuid(),
@@ -123,15 +124,39 @@ export async function validatePayment(paymentId: string, status: "confirme" | "r
                         statut: "redevable"
                     }).where(eq(assujettis.id, payment.assujettiId!));
                 }
+                return { success: true as const, payment, note };
             }
-
-            return { success: true };
+            return { success: true as const };
         });
 
         revalidatePath("/agent/paiements");
         revalidatePath("/agent/taxation");
 
-        return result;
+        // SMS de confirmation quand le paiement est confirmé (sender: rtnc rdv)
+        if (status === "confirme" && result && "payment" in result && "note" in result) {
+            const { payment, note } = result;
+            if (payment.assujettiId) {
+                try {
+                    const [a] = await db.select({
+                        nomRaisonSociale: assujettis.nomRaisonSociale,
+                        telephonePrincipal: assujettis.telephonePrincipal,
+                    }).from(assujettis).where(eq(assujettis.id, payment.assujettiId)).limit(1);
+                    if (a?.telephonePrincipal) {
+                        await sendPaymentConfirmationSms({
+                            phone: a.telephonePrincipal,
+                            nom: a.nomRaisonSociale ?? "Assujetti",
+                            montant: `${payment.montant} $`,
+                            periode: String(note.exercice),
+                            reference: payment.referenceTransaction ?? undefined,
+                        });
+                    }
+                } catch (smsErr) {
+                    console.error("SMS confirmation paiement:", smsErr);
+                }
+            }
+        }
+
+        return { success: true };
     } catch (error: any) {
         console.error("Validate payment error:", error);
         return { success: false, error: error.message || "INTERNAL_SERVER_ERROR" };

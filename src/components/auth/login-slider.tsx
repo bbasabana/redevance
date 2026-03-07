@@ -59,7 +59,7 @@ export function LoginSlider() {
                 </motion.div>
             </AnimatePresence>
 
-            <div className="absolute bottom-12 left-12 right-12 z-10">
+            <div className="absolute bottom-6 left-6 right-6 md:bottom-8 md:left-8 md:right-8 lg:bottom-12 lg:left-12 lg:right-12 z-10">
                 <AnimatePresence mode="wait">
                     <motion.div
                         key={current}
@@ -68,16 +68,16 @@ export function LoginSlider() {
                         exit={{ y: -20, opacity: 0 }}
                         transition={{ duration: 0.8, delay: 0.5 }}
                     >
-                        <h2 className="text-4xl font-bold text-white mb-2 leading-tight">
+                        <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-white mb-2 leading-tight">
                             {slides[current].title}
                         </h2>
-                        <p className="text-xl text-white/80 max-w-md">
+                        <p className="text-base md:text-lg lg:text-xl text-white/80 max-w-md">
                             {slides[current].description}
                         </p>
                     </motion.div>
                 </AnimatePresence>
 
-                <div className="flex gap-2 mt-8">
+                <div className="flex gap-2 mt-4 md:mt-6 lg:mt-8">
                     {slides.map((_, i) => (
                         <div
                             key={i}

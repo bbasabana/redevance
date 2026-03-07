@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:migrate:onboarding": "node scripts/run-onboarding-migration.js"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",
@@ -41,6 +42,7 @@
     "leaflet": "^1.9.4",
     "leaflet-defaulticon-compatibility": "^0.1.2",
     "lucide-react": "^0.574.0",
+    "messagebird": "^4.0.1",
     "next": "14.2.35",
     "next-auth": "^5.0.0-beta.30",
     "next-themes": "^0.4.6",
@@ -69,6 +71,7 @@
     "drizzle-kit": "^0.31.9",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
+    "pg": "^8.13.0",
     "postcss": "^8",
     "shadcn-ui": "^0.9.5",
     "tailwindcss": "^3.4.1",

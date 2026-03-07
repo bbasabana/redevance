@@ -38,7 +38,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
                 // 1. Try Admin Users (IT Admins)
                 const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.email, email)).limit(1);
-                console.log("Auth Authorize - Checking Admin for email:", email, !!admin);
                 if (admin) {
                     const isValid = await bcrypt.compare(password, admin.passwordHash);
                     if (isValid) {
@@ -65,8 +64,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
                     .where(eq(appUsers.email, email))
                     .limit(1);
 
-                console.log("Auth Authorize - Checking App User for email:", email, !!userWithRole, "Role:", userWithRole?.roleName);
-
                 if (userWithRole) {
                     const { user, roleName } = userWithRole;
                     const isValid = await bcrypt.compare(password, user.passwordHash);
@@ -89,7 +86,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     callbacks: {
         async jwt({ token, user, trigger, session }) {
             if (user) {
-                console.log("Auth Callback JWT - User log in:", user.email, "Type:", (user as any).userType);
                 token.id = user.id;
                 token.userType = (user as any).userType;
                 token.role = (user as any).role;

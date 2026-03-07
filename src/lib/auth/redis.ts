@@ -5,7 +5,10 @@ const redisUrl = process.env.UPSTASH_REDIS_URL;
 const redisToken = process.env.UPSTASH_REDIS_TOKEN;
 
 if (!redisUrl || !redisToken) {
-    console.warn("⚠️ Upstash Redis missing: Rate limiting disabled.");
+    if (typeof process !== "undefined" && !(process as any).__redis_warned) {
+        (process as any).__redis_warned = true;
+        console.warn("⚠️ Upstash Redis missing: Rate limiting disabled.");
+    }
 }
 
 export const redis = (redisUrl && redisToken)

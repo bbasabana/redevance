@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 export default async function ProfilEditPage() {
     const session = await auth();
     if (!session?.user?.id) {
-        redirect("/login");
+        redirect("/panel/signin");
     }
 
     const [profile] = await db

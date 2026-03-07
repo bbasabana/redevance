@@ -83,29 +83,29 @@ export function LoginForm({ hideSignUp = false }: { hideSignUp?: boolean }) {
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="w-full max-w-md"
+      className="w-full max-w-md min-w-0 my-auto"
     >
-      <div className="flex justify-center mb-8">
+      <div className="flex justify-center mb-4 sm:mb-6 md:mb-8">
         <Link href="/">
           <Image
             src="/logos/logo.png"
             alt="Logo RTNC"
             width={280}
             height={80}
-            className="h-16 w-auto"
+            className="h-12 sm:h-14 md:h-16 w-auto"
           />
         </Link>
       </div>
 
       <Card className="border-none shadow-none bg-white/70 backdrop-blur-xl rounded-xl">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-3xl font-bold tracking-tight text-center">Connexion</CardTitle>
-          <CardDescription className="text-center text-slate-500">
+        <CardHeader className="space-y-1 px-4 sm:px-6 pt-4 sm:pt-6 pb-2">
+          <CardTitle className="text-2xl sm:text-3xl font-bold tracking-tight text-center">Connexion</CardTitle>
+          <CardDescription className="text-center text-slate-500 text-sm sm:text-base">
             Entrez vos identifiants pour accéder à votre espace
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <CardContent className="px-4 sm:px-6 pb-6">
+          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             <motion.div variants={itemVariants} className="space-y-2">
               <Label htmlFor="email">Email professionnel</Label>
               <div className="relative group">
@@ -116,7 +116,7 @@ export function LoginForm({ hideSignUp = false }: { hideSignUp?: boolean }) {
                   placeholder="nom@exemple.com"
                   type="email"
                   required
-                  className="pl-10 py-6 rounded-lg border-slate-200 focus:border-primary focus:ring-primary"
+                  className="pl-10 py-4 sm:py-6 rounded-lg border-slate-200 focus:border-primary focus:ring-primary"
                 />
               </div>
             </motion.div>
@@ -137,7 +137,7 @@ export function LoginForm({ hideSignUp = false }: { hideSignUp?: boolean }) {
                   name="password"
                   type={showPassword ? "text" : "password"}
                   required
-                  className="pl-10 pr-10 py-6 rounded-lg border-slate-200 focus:border-primary focus:ring-primary"
+                  className="pl-10 pr-10 py-4 sm:py-6 rounded-lg border-slate-200 focus:border-primary focus:ring-primary"
                 />
                 <button
                   type="button"
@@ -152,7 +152,7 @@ export function LoginForm({ hideSignUp = false }: { hideSignUp?: boolean }) {
               <Button
                 type="submit"
                 disabled={isPending}
-                className={`w-full py-6 text-lg font-bold rounded-lg shadow-none group transition-all duration-300 ${isPending
+                className={`w-full py-4 sm:py-6 text-base sm:text-lg font-bold rounded-lg shadow-none group transition-all duration-300 ${isPending
                   ? "bg-yellow-400 text-slate-900"
                   : "bg-primary text-white hover:bg-primary/95"
                   }`}
@@ -172,7 +172,7 @@ export function LoginForm({ hideSignUp = false }: { hideSignUp?: boolean }) {
             </motion.div>
           </form>
 
-          <motion.div variants={itemVariants} className="mt-8">
+          <motion.div variants={itemVariants} className="mt-5 sm:mt-6 md:mt-8">
             <div className="relative">
               <Separator />
               <div className="absolute inset-0 flex items-center justify-center">
@@ -182,7 +182,7 @@ export function LoginForm({ hideSignUp = false }: { hideSignUp?: boolean }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mt-8">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 mt-5 sm:mt-6 md:mt-8">
               <div className="flex items-center space-x-2 text-slate-500">
                 <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center">
                   <Shield className="h-4 w-4 text-primary" />
@@ -209,7 +209,7 @@ export function LoginForm({ hideSignUp = false }: { hideSignUp?: boolean }) {
       {!hideSignUp && (
         <motion.p
           variants={itemVariants}
-          className="text-center mt-6 text-slate-500 text-sm"
+          className="text-center mt-4 sm:mt-6 text-slate-500 text-sm"
         >
           Vous n'avez pas de compte ?{" "}
           <Link href="/panel/signup" className="text-primary font-bold hover:underline">

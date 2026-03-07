@@ -221,6 +221,10 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                     toast.error("L'Identification Nationale (Id. Nat) est obligatoire et doit être au format valide.", { className: "text-red-500" });
                     return;
                 }
+                if (!representant.trim() || representant.trim().length < 2) {
+                    toast.error("Le nom du représentant / gérant est requis (minimum 2 caractères).", { className: "text-red-500" });
+                    return;
+                }
                 await saveIdentificationStep(session.user.id, 2, {
                     structure, activities, autreActivite, representant, email, telephone, entityInfo
                 });
@@ -276,6 +280,11 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
     const handleFinalSubmit = async () => {
         setIsSubmitting(true);
         try {
+            if (!representant.trim() || representant.trim().length < 2) {
+                toast.error("Le nom du représentant / gérant est requis (minimum 2 caractères). Revenez à l'étape Identification.", { className: "text-red-500" });
+                setIsSubmitting(false);
+                return;
+            }
             // Determine the most specific valid geography ID available
             let finalGeographyId = "";
             if (quartier && quartier !== "indisponible") finalGeographyId = quartier;
@@ -531,8 +540,20 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                                 </div>
                                             </div>
                                             <div className="space-y-1">
-                                                <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Nom du Représentant / Gérant</Label>
-                                                <Input disabled value={representant} className="h-11 bg-slate-100 border-none rounded-xl font-bold text-slate-700 text-sm" />
+                                                <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Nom du Représentant / Gérant <span className="text-red-500">*</span></Label>
+                                                <Input
+                                                    placeholder="Nom et prénom du représentant légal"
+                                                    value={representant}
+                                                    onChange={e => setRepresentant(e.target.value)}
+                                                    className={cn(
+                                                        "h-11 rounded-xl text-sm transition-all",
+                                                        representant.trim().length >= 2 ? "bg-slate-50 border-slate-200 font-bold text-slate-700" : "bg-slate-50 border-slate-200",
+                                                        representant.length > 0 && representant.trim().length < 2 && "border-amber-500 bg-amber-50/50"
+                                                    )}
+                                                />
+                                                {representant.length > 0 && representant.trim().length < 2 && (
+                                                    <p className="text-[9px] text-amber-600 font-medium ml-1">Minimum 2 caractères requis</p>
+                                                )}
                                             </div>
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-1">
