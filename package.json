@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:migrate:onboarding": "node scripts/run-onboarding-migration.js"
+    "db:migrate:onboarding": "node scripts/run-onboarding-migration.js",
+    "test:sms": "node scripts/test-sms.js"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.1",

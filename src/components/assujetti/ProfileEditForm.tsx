@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
     Building2, MapPin, Phone, Mail,
@@ -21,7 +21,7 @@ import {
     SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { updateAssujettiProfile } from "@/app/actions/assujetti";
+import { updateAssujettiProfile, updateAssujettiCoordonnees } from "@/app/actions/assujetti";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -67,8 +67,47 @@ export default function ProfileEditPage({ initialData }: ProfileEditFormProps) {
     });
 
     const [isMapOpen, setIsMapOpen] = useState(false);
+    const [isSavingCoordonnees, setIsSavingCoordonnees] = useState(false);
+    const coordonneesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const latestCoordonneesRef = useRef({ adresseSiege: "", telephonePrincipal: "", email: "", latitude: undefined as number | undefined, longitude: undefined as number | undefined });
+    const COORDONNEES_DEBOUNCE_MS = 600;
 
     const isPending = formData.validationStatus === "pending";
+
+    latestCoordonneesRef.current = {
+        adresseSiege: formData.adresseSiege,
+        telephonePrincipal: formData.telephonePrincipal,
+        email: formData.email,
+        latitude: formData.latitude,
+        longitude: formData.longitude,
+    };
+
+    const saveCoordonnees = useCallback(async (payload: { adresseSiege?: string; telephonePrincipal?: string; email?: string; latitude?: number; longitude?: number }) => {
+        setIsSavingCoordonnees(true);
+        const result = await updateAssujettiCoordonnees(payload);
+        setIsSavingCoordonnees(false);
+        if (result.success) toast.success("Coordonnées enregistrées");
+        else toast.error(result.error || "Erreur enregistrement");
+    }, []);
+
+    const scheduleCoordonneesSave = useCallback(() => {
+        if (coordonneesDebounceRef.current) clearTimeout(coordonneesDebounceRef.current);
+        coordonneesDebounceRef.current = setTimeout(() => {
+            coordonneesDebounceRef.current = null;
+            const c = latestCoordonneesRef.current;
+            saveCoordonnees({
+                adresseSiege: c.adresseSiege,
+                telephonePrincipal: c.telephonePrincipal,
+                email: c.email,
+                latitude: c.latitude,
+                longitude: c.longitude,
+            });
+        }, COORDONNEES_DEBOUNCE_MS);
+    }, [saveCoordonnees]);
+
+    useEffect(() => () => {
+        if (coordonneesDebounceRef.current) clearTimeout(coordonneesDebounceRef.current);
+    }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -101,6 +140,11 @@ export default function ProfileEditPage({ initialData }: ProfileEditFormProps) {
         });
     };
 
+    const handleCoordonneesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+        scheduleCoordonneesSave();
+    };
+
     const handleMapConfirm = (address: string, lat?: number, lng?: number) => {
         setFormData(prev => ({
             ...prev,
@@ -108,6 +152,7 @@ export default function ProfileEditPage({ initialData }: ProfileEditFormProps) {
             latitude: lat,
             longitude: lng
         }));
+        saveCoordonnees({ adresseSiege: address, latitude: lat, longitude: lng });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -290,7 +335,16 @@ export default function ProfileEditPage({ initialData }: ProfileEditFormProps) {
                                 <CardTitle className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3">
                                     <MapPin className="w-5 h-5 text-yellow-400" />
                                     Coordonnées & Siège
+                                    {isSavingCoordonnees && (
+                                        <span className="text-[10px] font-bold text-yellow-400 flex items-center gap-1.5 ml-auto">
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            Enregistrement...
+                                        </span>
+                                    )}
                                 </CardTitle>
+                                <CardDescription className="text-white/80 text-[10px] font-bold uppercase tracking-wider mt-1">
+                                    Saisie automatique : les modifications sont enregistrées dès que vous tapez.
+                                </CardDescription>
                             </CardHeader>
                             <CardContent className="p-8">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -303,7 +357,7 @@ export default function ProfileEditPage({ initialData }: ProfileEditFormProps) {
                                                     id="adresseSiege"
                                                     name="adresseSiege"
                                                     value={formData.adresseSiege}
-                                                    onChange={handleChange}
+                                                    onChange={handleCoordonneesChange}
                                                     className="h-12 pl-10 rounded-lg border-2 border-slate-100 bg-slate-50/50 focus:bg-white focus:border-[#0d2870] transition-all font-bold"
                                                 />
                                             </div>
@@ -332,7 +386,7 @@ export default function ProfileEditPage({ initialData }: ProfileEditFormProps) {
                                                 id="telephonePrincipal"
                                                 name="telephonePrincipal"
                                                 value={formData.telephonePrincipal}
-                                                onChange={handleChange}
+                                                onChange={handleCoordonneesChange}
                                                 className="h-12 pl-10 rounded-lg border-2 border-slate-100 bg-slate-50/50 focus:bg-white focus:border-[#0d2870] transition-all font-bold"
                                             />
                                         </div>
@@ -347,7 +401,7 @@ export default function ProfileEditPage({ initialData }: ProfileEditFormProps) {
                                                 name="email"
                                                 type="email"
                                                 value={formData.email}
-                                                onChange={handleChange}
+                                                onChange={handleCoordonneesChange}
                                                 className="h-12 pl-10 rounded-lg border-2 border-slate-100 bg-slate-50/50 focus:bg-white focus:border-[#0d2870] transition-all font-bold"
                                             />
                                         </div>
@@ -481,6 +535,7 @@ export default function ProfileEditPage({ initialData }: ProfileEditFormProps) {
                         latitude: lat,
                         longitude: lng
                     }));
+                    saveCoordonnees({ adresseSiege: address, latitude: lat, longitude: lng });
                 }}
                 initialAddress={formData.adresseSiege}
             />

@@ -65,3 +65,50 @@ export async function updateAssujettiProfile(data: z.infer<typeof UpdateProfileS
         return { success: false, error: error.message || "Erreur lors de la mise à jour" };
     }
 }
+
+const CoordonneesSchema = z.object({
+    adresseSiege: z.string().optional().or(z.literal("")),
+    telephonePrincipal: z.string().optional().or(z.literal("")),
+    email: z.union([z.string().email("Email invalide"), z.literal("")]).optional(),
+    latitude: z.number().optional().nullable(),
+    longitude: z.number().optional().nullable(),
+});
+
+/** Sauvegarde automatique des seules coordonnées & siège (adresse, tél, email, position). */
+export async function updateAssujettiCoordonnees(data: z.infer<typeof CoordonneesSchema>) {
+    try {
+        const session = await auth();
+        if (!session?.user?.id) return { success: false, error: "Non autorisé" };
+
+        const validated = CoordonneesSchema.safeParse(data);
+        if (!validated.success) return { success: false, error: "Données invalides" };
+
+        const [profile] = await db
+            .select({ id: assujettis.id })
+            .from(assujettis)
+            .where(eq(assujettis.userId, session.user.id))
+            .limit(1);
+
+        if (!profile) return { success: false, error: "Profil non trouvé" };
+
+        const payload: Record<string, unknown> = {
+            updatedAt: new Date(),
+        };
+        if (validated.data.adresseSiege !== undefined) payload.adresseSiege = validated.data.adresseSiege ?? "";
+        if (validated.data.telephonePrincipal !== undefined) payload.telephonePrincipal = validated.data.telephonePrincipal || null;
+        if (validated.data.email !== undefined) payload.email = validated.data.email || null;
+        if (validated.data.latitude !== undefined) payload.latitude = validated.data.latitude != null ? String(validated.data.latitude) : null;
+        if (validated.data.longitude !== undefined) payload.longitude = validated.data.longitude != null ? String(validated.data.longitude) : null;
+
+        await db.update(assujettis).set(payload as any).where(eq(assujettis.id, profile.id));
+
+        revalidatePath("/assujetti/profil/edit");
+        revalidatePath("/assujetti/profil/infos");
+        revalidatePath("/assujetti/dashboard");
+
+        return { success: true };
+    } catch (error: unknown) {
+        console.error("Error updating coordonnées:", error);
+        return { success: false, error: error instanceof Error ? error.message : "Erreur lors de l'enregistrement" };
+    }
+}

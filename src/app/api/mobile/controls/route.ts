@@ -5,12 +5,75 @@ import {
   controlesTerrain,
   notesRectificativesTerrain,
 } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { getBearerTokenFromRequest, verifyMobileToken } from "@/lib/auth/jwt-mobile";
 import { sendControlNotificationSms } from "@/lib/sms/messagebird";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+/** GET: liste des contrôles (factures) de l'agent connecté uniquement. */
+export async function GET(req: NextRequest) {
+  const token = getBearerTokenFromRequest(req);
+  if (!token) {
+    return NextResponse.json({ success: false, error: "Non autorisé." }, { status: 401 });
+  }
+
+  const payload = await verifyMobileToken(token);
+  if (!payload) {
+    return NextResponse.json({ success: false, error: "Session expirée ou invalide." }, { status: 401 });
+  }
+
+  const agentId = payload.userId;
+  const { searchParams } = new URL(req.url);
+  const q = searchParams.get("q")?.trim().toLowerCase();
+
+  try {
+    let rows = await db
+      .select({
+        id: controlesTerrain.id,
+        dateControle: controlesTerrain.dateControle,
+        exercice: controlesTerrain.exercice,
+        assujettiId: controlesTerrain.assujettiId,
+        nomRaisonSociale: assujettis.nomRaisonSociale,
+        nif: assujettis.nif,
+        identifiantFiscal: assujettis.identifiantFiscal,
+        montantTotal: notesRectificativesTerrain.montantTotal,
+        statutPaiement: notesRectificativesTerrain.statutPaiement,
+      })
+      .from(controlesTerrain)
+      .innerJoin(assujettis, eq(controlesTerrain.assujettiId, assujettis.id))
+      .leftJoin(notesRectificativesTerrain, eq(notesRectificativesTerrain.controleId, controlesTerrain.id))
+      .where(eq(controlesTerrain.agentId, agentId))
+      .orderBy(desc(controlesTerrain.dateControle));
+
+    if (q && q.length > 0) {
+      rows = rows.filter(
+        (r) =>
+          (r.nif?.toLowerCase().includes(q)) ||
+          (r.identifiantFiscal?.toLowerCase().includes(q)) ||
+          (r.nomRaisonSociale?.toLowerCase().includes(q))
+      );
+    }
+
+    const list = rows.map((r) => ({
+      id: r.id,
+      ticketId: r.id,
+      dateOperation: r.dateControle,
+      exercice: r.exercice,
+      assujettiName: r.nomRaisonSociale ?? "—",
+      nif: r.nif ?? null,
+      identifiantFiscal: r.identifiantFiscal ?? null,
+      montantTotal: r.montantTotal ? Number(r.montantTotal) : 0,
+      statutPaiement: r.statutPaiement ?? "non_paye",
+    }));
+
+    return NextResponse.json({ success: true, data: list });
+  } catch (e) {
+    console.error("Mobile list controls error:", e);
+    return NextResponse.json({ success: false, error: "Erreur serveur." }, { status: 500 });
+  }
+}
 
 export async function POST(req: NextRequest) {
   const token = getBearerTokenFromRequest(req);

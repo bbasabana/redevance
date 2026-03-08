@@ -11,7 +11,7 @@ function getClient(): { messages: { create: (params: unknown, cb: (err: unknown,
   if (!MESSAGEBIRD_API_KEY) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const messagebird = require("messagebird")(MESSAGEBIRD_API_KEY);
+    const messagebird = require("messagebird").initClient(MESSAGEBIRD_API_KEY);
     return messagebird;
   } catch {
     return null;
