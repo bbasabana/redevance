@@ -5,7 +5,7 @@ import {
   controlesTerrain,
   notesRectificativesTerrain,
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getBearerTokenFromRequest, verifyMobileToken } from "@/lib/auth/jwt-mobile";
 import { sendControlNotificationSms } from "@/lib/sms/messagebird";
 
@@ -64,13 +64,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const exerciceYear = exercice ?? new Date().getFullYear();
+    const [existing] = await db
+      .select({ id: controlesTerrain.id })
+      .from(controlesTerrain)
+      .where(and(eq(controlesTerrain.assujettiId, assujettiId), eq(controlesTerrain.exercice, exerciceYear)))
+      .limit(1);
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: `Un contrôle existe déjà pour cet assujetti pour l'exercice ${exerciceYear}. Un seul contrôle par période.` },
+        { status: 409 }
+      );
+    }
+
     const result = await db.transaction(async (tx) => {
       const [control] = await tx
         .insert(controlesTerrain)
         .values({
           assujettiId,
           agentId: payload!.userId,
-          exercice: exercice || new Date().getFullYear(),
+          exercice: exerciceYear,
           nbTvDeclare: nbTvDeclare ?? 0,
           nbRadioDeclare: nbRadioDeclare ?? 0,
           nbTvConstate: nbTvConstate ?? 0,

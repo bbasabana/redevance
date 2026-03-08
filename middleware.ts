@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
+// CORS pour l'API mobile (app Flutter, pas de cookies — auth par Bearer token)
+const MOBILE_CORS_HEADERS: Record<string, string> = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+    "Access-Control-Max-Age": "86400",
+};
+
 // Need to match what's in session.ts
 const secretKey = process.env.AUTH_SECRET || "default_super_secret_key_change_me_in_production";
 const key = new TextEncoder().encode(secretKey);
@@ -20,6 +28,21 @@ async function getSessionPayload(request: NextRequest, cookieName: string) {
 export async function middleware(request: NextRequest) {
     const { nextUrl } = request;
     const pathname = nextUrl.pathname;
+
+    // ── API mobile : CORS uniquement, pas de cookies (auth via Authorization: Bearer)
+    if (pathname.startsWith("/api/mobile")) {
+        if (request.method === "OPTIONS") {
+            return new NextResponse(null, { status: 204, headers: MOBILE_CORS_HEADERS });
+        }
+        const res = NextResponse.next();
+        Object.entries(MOBILE_CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));
+        return res;
+    }
+
+    // ── Les routes API non-mobile ne passent pas par le middleware (matcher les exclut)
+    if (pathname.startsWith("/api/")) {
+        return NextResponse.next();
+    }
 
     const session = await getSessionPayload(request, "auth_session");
     const pending = await getSessionPayload(request, "auth_pending");
@@ -106,5 +129,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-    matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+    matcher: ["/api/mobile/:path*", "/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { assujettis, declarations, lignesDeclaration } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { assujettis, declarations, lignesDeclaration, controlesTerrain } from "@/db/schema";
+import { eq, desc, and } from "drizzle-orm";
 import { getBearerTokenFromRequest, verifyMobileToken } from "@/lib/auth/jwt-mobile";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +32,13 @@ export async function GET(
       return NextResponse.json({ success: false, error: "Assujetti non trouvé." }, { status: 404 });
     }
 
+    const exerciceCourant = new Date().getFullYear();
+    const [existingControl] = await db
+      .select({ id: controlesTerrain.id, dateControle: controlesTerrain.dateControle })
+      .from(controlesTerrain)
+      .where(and(eq(controlesTerrain.assujettiId, id), eq(controlesTerrain.exercice, exerciceCourant)))
+      .limit(1);
+
     const [lastDecl] = await db
       .select()
       .from(declarations)
@@ -60,6 +67,9 @@ export async function GET(
         ...assujetti,
         nbTvDeclare,
         nbRadioDeclare,
+        controlStatus: existingControl
+          ? { alreadyControlled: true, exercice: exerciceCourant, dateControle: existingControl.dateControle }
+          : { alreadyControlled: false, exercice: exerciceCourant },
       },
     });
   } catch (e) {
