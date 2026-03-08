@@ -39,6 +39,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 const adminItems = [
     { title: "Tableau de Bord", href: "/admin/dashboard", iconName: "dashboard" },
+    { title: "Contrôles à valider", href: "/admin/controles-a-valider", iconName: "declarations" },
     { title: "Utilisateurs", href: "/admin/utilisateurs", iconName: "users" },
     { title: "Zones & Communes", href: "/admin/zones-communes", iconName: "zones" },
     { title: "Tarifs", href: "/admin/tarifs", iconName: "tarifs" },

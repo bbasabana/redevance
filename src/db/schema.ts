@@ -22,6 +22,7 @@ export const onboardingStatusEnum = pgEnum("onboarding_status_enum", ["pending",
 export const validationStatusEnum = pgEnum("validation_status_enum", ["pending", "validated", "rejected", "none"]);
 export const statutControleTerrainEnum = pgEnum("statut_controle_terrain_enum", ["en_cours", "finalise", "pv_genere"]);
 export const statutPaiementTerrainEnum = pgEnum("statut_paiement_terrain_enum", ["non_paye", "paye", "en_attente"]);
+export const statutValidationAdminControleEnum = pgEnum("statut_validation_admin_controle_enum", ["pending", "approved", "rejected"]);
 
 export const geographyTypeEnum = pgEnum("geography_type_enum", [
     "PROVINCE", "VILLE", "TERRITOIRE", "CITE", "SECTEUR", "CHEFFERIE", "COMMUNE", "QUARTIER", "GROUPEMENT"
@@ -340,6 +341,10 @@ export const controlesTerrain = pgTable("controles_terrain", {
     observations: text("observations"),
     dateControle: timestamp("date_controle").defaultNow(),
     geolocalisation: jsonb("geolocalisation"), // { lat, lng }
+    /** Snapshot des données d'identification constatées (nom, NIF, RCCM, etc.) pour comparaison admin */
+    dataConstateeIdentification: jsonb("data_constatee_identification"),
+    /** Validation admin : pending → à vérifier, approved → assujetti mis à jour, rejected → rejeté */
+    statutValidationAdmin: statutValidationAdminControleEnum("statut_validation_admin").default("pending").notNull(),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").$onUpdate(() => new Date()),
 });

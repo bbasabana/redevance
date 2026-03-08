@@ -103,6 +103,7 @@ export async function POST(req: NextRequest) {
       activitesConstatees,
       precisionAutre,
       adresseConstatee,
+      dataConstateeIdentification,
     } = body as {
       assujettiId: string;
       nbTvConstate: number;
@@ -118,6 +119,7 @@ export async function POST(req: NextRequest) {
       activitesConstatees?: string[];
       precisionAutre?: string;
       adresseConstatee?: string;
+      dataConstateeIdentification?: Record<string, string | undefined>;
     };
 
     if (!assujettiId || nbTvConstate == null || nbRadioConstate == null) {
@@ -158,6 +160,8 @@ export async function POST(req: NextRequest) {
           adresseConstatee: adresseConstatee ?? null,
           observations: observations ?? null,
           geolocalisation: geolocalisation ?? null,
+          dataConstateeIdentification: dataConstateeIdentification ?? null,
+          statutValidationAdmin: "pending",
           statut: "finalise",
           dateControle: new Date(),
         })

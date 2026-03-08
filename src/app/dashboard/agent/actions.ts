@@ -128,6 +128,19 @@ export async function calculateControlAction(assujettiId: string) {
     }
 }
 
+/** Données d'identification constatées (pour comparaison admin) */
+export type DataConstateeIdentification = {
+    nomRaisonSociale?: string;
+    typePersonne?: string;
+    nif?: string;
+    rccm?: string;
+    representantLegal?: string;
+    adresseSiege?: string;
+    idNat?: string;
+    typeActivite?: string;
+    sousTypePm?: string;
+};
+
 export async function saveControlAction(data: {
     assujettiId: string;
     nbTvConstate: number;
@@ -143,6 +156,7 @@ export async function saveControlAction(data: {
     activitesConstatees?: string[];
     precisionAutre?: string;
     adresseConstatee?: string;
+    dataConstateeIdentification?: DataConstateeIdentification;
 }) {
     try {
         const session = await getSession();
@@ -165,6 +179,8 @@ export async function saveControlAction(data: {
                 adresseConstatee: data.adresseConstatee,
                 observations: data.observations,
                 geolocalisation: data.geolocalisation,
+                dataConstateeIdentification: data.dataConstateeIdentification ?? null,
+                statutValidationAdmin: "pending",
                 statut: "finalise",
                 dateControle: new Date()
             }).returning();

@@ -44,6 +44,9 @@ interface Assujetti {
     rccm?: string | null;
     representantLegal?: string | null;
     adresseSiege?: string;
+    idNat?: string | null;
+    typeActivite?: string | null;
+    sousTypePm?: string | null;
     nbTvDeclare: number;
     nbRadioDeclare: number;
 }
@@ -78,6 +81,9 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
         rccm: "",
         representantLegal: "",
         adresseSiege: "",
+        idNat: "",
+        typeActivite: "",
+        sousTypePm: "",
         secteursActivite: [] as string[],
         precisionAutre: "",
         adresseConstatee: "",
@@ -129,6 +135,26 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
         fetchData();
     }, [assujetti.id]);
 
+    // Préremplir les données constatées depuis l'assujetti à l'entrée en phase constat
+    useEffect(() => {
+        if (phase !== "constat") return;
+        setConstatData((prev) => {
+            if (prev.nomRaisonSociale !== "" && prev.nif !== "") return prev;
+            return {
+                ...prev,
+                nomRaisonSociale: assujetti.nomRaisonSociale ?? "",
+                typePersonne: assujetti.typePersonne ?? "",
+                nif: assujetti.nif ?? "",
+                rccm: assujetti.rccm ?? "",
+                representantLegal: assujetti.representantLegal ?? "",
+                adresseSiege: assujetti.adresseSiege ?? "",
+                idNat: assujetti.idNat ?? "",
+                typeActivite: assujetti.typeActivite ?? "",
+                sousTypePm: assujetti.sousTypePm ?? "",
+            };
+        });
+    }, [phase, assujetti.nomRaisonSociale, assujetti.typePersonne, assujetti.nif, assujetti.rccm, assujetti.representantLegal, assujetti.adresseSiege, assujetti.idNat, assujetti.typeActivite, assujetti.sousTypePm]);
+
     // Derived values for Analysis
     const ecartTv = nbTvConstate - declaredData.nbTv;
     const ecartRadio = nbRadioConstate - declaredData.nbRadio;
@@ -153,7 +179,18 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
             geolocalisation: geo,
             activitesConstatees: constatData.secteursActivite,
             precisionAutre: constatData.precisionAutre,
-            adresseConstatee: constatData.adresseConstatee
+            adresseConstatee: constatData.adresseConstatee,
+            dataConstateeIdentification: {
+                nomRaisonSociale: constatData.nomRaisonSociale || undefined,
+                typePersonne: constatData.typePersonne || undefined,
+                nif: constatData.nif || undefined,
+                rccm: constatData.rccm || undefined,
+                representantLegal: constatData.representantLegal || undefined,
+                adresseSiege: constatData.adresseSiege || undefined,
+                idNat: constatData.idNat || undefined,
+                typeActivite: constatData.typeActivite || undefined,
+                sousTypePm: constatData.sousTypePm || undefined,
+            },
         });
 
         if (res.success) {
@@ -508,6 +545,50 @@ function ConstatPhase({ tv, setTv, radio, setRadio, data, setData, geo, setGeo, 
                                 className="h-12 rounded-2xl bg-slate-50 border-slate-100 font-bold text-sm uppercase"
                             />
                         </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1.5">
+                                <label className="text-[9px] font-black uppercase text-slate-400 px-1">ID National</label>
+                                <Input
+                                    value={data.idNat}
+                                    onChange={(e) => setData({ idNat: e.target.value })}
+                                    placeholder="Id. Nat."
+                                    className="h-12 rounded-2xl bg-slate-50 border-slate-100 font-mono font-bold text-sm uppercase"
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[9px] font-black uppercase text-slate-400 px-1">Catégorie (activité)</label>
+                                <select
+                                    value={data.typeActivite}
+                                    onChange={(e) => setData({ typeActivite: e.target.value })}
+                                    className="w-full h-12 rounded-2xl bg-slate-50 border-slate-100 font-bold text-sm uppercase px-4 outline-none focus:ring-2 focus:ring-[#0d2870]/20"
+                                >
+                                    <option value="">—</option>
+                                    <option value="hotel">Hôtel</option>
+                                    <option value="restaurant">Restaurant</option>
+                                    <option value="bar">Bar</option>
+                                    <option value="lounge">Lounge</option>
+                                    <option value="paris_sportifs">Paris sportifs</option>
+                                    <option value="guest_house">Guest house</option>
+                                    <option value="chaine_tv">Chaîne TV</option>
+                                    <option value="autre">Autre</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-slate-400 px-1">Sous-type PM (si personne morale)</label>
+                            <select
+                                value={data.sousTypePm}
+                                onChange={(e) => setData({ sousTypePm: e.target.value })}
+                                className="w-full h-12 rounded-2xl bg-slate-50 border-slate-100 font-bold text-sm uppercase px-4 outline-none focus:ring-2 focus:ring-[#0d2870]/20"
+                            >
+                                <option value="">—</option>
+                                <option value="pmta">PMTA</option>
+                                <option value="ppta">PPTA</option>
+                                <option value="pm">PM</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -657,11 +738,14 @@ function AnalysePhase({ assujetti, tvC, radioC, constatData, montantPrincipal, m
 
     const idChecks = [
         { label: "Nom/Raison Sociale", constat: constatData.nomRaisonSociale, declare: assujetti.nomRaisonSociale },
-        { label: "Type", constat: constatData.typePersonne, declare: assujetti.typePersonne },
+        { label: "Type (Physique/Morale)", constat: constatData.typePersonne, declare: assujetti.typePersonne },
         { label: "NIF", constat: constatData.nif, declare: assujetti.nif || "" },
         { label: "RCCM", constat: constatData.rccm, declare: assujetti.rccm || "" },
-        { label: "Représentant", constat: constatData.representantLegal, declare: assujetti.representantLegal || "" },
-        { label: "Adresse", constat: constatData.adresseSiege, declare: assujetti.adresseSiege || "" },
+        { label: "ID National", constat: constatData.idNat, declare: assujetti.idNat || "" },
+        { label: "Représentant légal", constat: constatData.representantLegal, declare: assujetti.representantLegal || "" },
+        { label: "Adresse siège", constat: constatData.adresseSiege, declare: assujetti.adresseSiege || "" },
+        { label: "Catégorie (activité)", constat: constatData.typeActivite, declare: assujetti.typeActivite || "" },
+        { label: "Sous-type PM", constat: constatData.sousTypePm, declare: assujetti.sousTypePm || "" },
     ];
 
     const anyIdDiffer = idChecks.some(c => c.constat?.toUpperCase() !== c.declare?.toUpperCase());
