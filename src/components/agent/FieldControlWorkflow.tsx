@@ -18,6 +18,7 @@ import {
     Download,
     Smartphone,
     Globe,
+    Landmark,
     Users,
     MapPin,
     Activity,
@@ -75,6 +76,8 @@ interface Assujetti {
 interface FieldControlWorkflowProps {
     assujetti: Assujetti;
     onClose: () => void;
+    /** Appelé quand l'utilisateur clique "Retour à l'historique" (ex: afficher l'onglet Factures) */
+    onSuccessClose?: () => void;
 }
 
 /** Ticket de contrôle (aligné mobile) pour affichage et impression */
@@ -100,7 +103,7 @@ export interface ControlTicketData {
 
 const phasesArray: ControlPhase[] = ["identification", "constat", "analyse", "paiement", "pv", "success"];
 
-export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflowProps) {
+export function FieldControlWorkflow({ assujetti, onClose, onSuccessClose }: FieldControlWorkflowProps) {
     const [phase, setPhase] = useState<ControlPhase>("identification");
     const [isPending, startTransition] = useTransition();
     const controlSavedRef = useRef(false);
@@ -417,7 +420,9 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
                         )}
                         {phase === "paiement" && (
                             <PaiementPhase
-                                montant={montantTotal}
+                                montantPrincipal={montantPrincipal}
+                                montantPenalite={montantPenalite}
+                                montantTotal={montantTotal}
                                 onNext={(method) => {
                                     setPaymentMethod(method);
                                     nextPhase();
@@ -436,7 +441,10 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
                         {phase === "success" && (
                             <SuccessPhase
                                 ticket={generatedTicket}
-                                onClose={onClose}
+                                onClose={() => {
+                                    onSuccessClose?.();
+                                    onClose();
+                                }}
                             />
                         )}
                     </motion.div>
@@ -1132,101 +1140,224 @@ function AnalysePhase({ assujetti, tvC, radioC, constatData, montantPrincipal, m
 }
 
 const PAIEMENT_METHODS = [
-    { id: "mtn", label: "MTN MoMo", icon: Smartphone, color: "bg-yellow-400 text-slate-900" },
+    { id: "mtn", label: "MTN MoMo (Vodacom)", icon: Smartphone, color: "bg-yellow-400 text-slate-900" },
     { id: "airtel", label: "Airtel Money", icon: Smartphone, color: "bg-red-600 text-white" },
     { id: "orange", label: "Orange Money", icon: Smartphone, color: "bg-orange-500 text-white" },
-    { id: "bank", label: "Virement / QR", icon: Globe, color: "bg-slate-900 text-white" },
+    { id: "virement", label: "Virement bancaire", icon: Landmark, color: "bg-slate-700 text-white" },
+    { id: "carte", label: "Carte de crédit", icon: CreditCard, color: "bg-indigo-600 text-white" },
 ] as const;
 
-function PaiementPhase({ montant, onNext, onBack }: { montant: number, onNext: (paymentMethod: string) => void, onBack: () => void }) {
-    const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
-    const [status, setStatus] = useState<"idle" | "pushing" | "verifying" | "paid">("idle");
+/** Détection opérateur RDC par préfixe: 81/82/84/85/89 = Vodacom, 78/79 = Airtel, 99 = Orange */
+function detectOperator(phone: string): "Vodacom" | "Airtel" | "Orange" | null {
+    const n = phone.replace(/\s/g, "").replace(/^\+243/, "").replace(/^0/, "");
+    if (n.length < 2) return null;
+    const prefix = n.slice(0, 2);
+    if (["81", "82", "84", "85", "89"].includes(prefix)) return "Vodacom";
+    if (["78", "79"].includes(prefix)) return "Airtel";
+    if (prefix === "99") return "Orange";
+    return null;
+}
 
-    const handlePay = () => {
-        if (!selectedMethod) return;
-        const label = PAIEMENT_METHODS.find((m) => m.id === selectedMethod)?.label ?? selectedMethod;
-        setStatus("pushing");
-        setTimeout(() => {
-            setStatus("verifying");
-            setTimeout(() => {
-                setStatus("paid");
-                toast.success("Paiement confirmé par l'assujetti");
-                setTimeout(() => onNext(label), 1500);
-            }, 3000);
-        }, 2000);
+function PaiementPhase({
+    montantPrincipal,
+    montantPenalite,
+    montantTotal,
+    onNext,
+    onBack,
+}: {
+    montantPrincipal: number;
+    montantPenalite: number;
+    montantTotal: number;
+    onNext: (paymentMethod: string) => void;
+    onBack: () => void;
+}) {
+    const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
+    const [noteSigned, setNoteSigned] = useState(false);
+    const [status, setStatus] = useState<"idle" | "sending" | "countdown" | "paid">("idle");
+    const [countdown, setCountdown] = useState(10);
+    const [submitted, setSubmitted] = useState(false);
+
+    const [phone, setPhone] = useState("");
+    const [bankName, setBankName] = useState("");
+    const [bankIban, setBankIban] = useState("");
+    const [bankTitulaire, setBankTitulaire] = useState("");
+    const [cardNumber, setCardNumber] = useState("");
+    const [cardExpiry, setCardExpiry] = useState("");
+    const [cardCvv, setCardCvv] = useState("");
+    const [cardHolder, setCardHolder] = useState("");
+
+    const operator = detectOperator(phone);
+
+    const canSubmit = () => {
+        if (!selectedMethod || !noteSigned) return false;
+        if (selectedMethod === "mtn" || selectedMethod === "airtel" || selectedMethod === "orange") return phone.replace(/\s/g, "").length >= 9;
+        if (selectedMethod === "virement") return bankName.trim().length > 0 && bankIban.trim().length > 0 && bankTitulaire.trim().length > 0;
+        if (selectedMethod === "carte") return cardNumber.replace(/\s/g, "").length >= 14 && cardExpiry.length >= 4 && cardCvv.length >= 3 && cardHolder.trim().length > 0;
+        return true;
     };
 
-    if (status !== "idle") {
+    const handlePay = () => {
+        if (!canSubmit() || submitted) return;
+        setSubmitted(true);
+        const label = PAIEMENT_METHODS.find((m) => m.id === selectedMethod)?.label ?? selectedMethod ?? "";
+        setStatus("sending");
+        toast.info("Envoi en cours...");
+        setTimeout(() => {
+            setStatus("countdown");
+            setCountdown(10);
+            const interval = setInterval(() => {
+                setCountdown((c) => {
+                    if (c <= 1) {
+                        clearInterval(interval);
+                        setStatus("paid");
+                        toast.success("Paiement réussi");
+                        setTimeout(() => onNext(label), 2000);
+                        return 0;
+                    }
+                    return c - 1;
+                });
+            }, 1000);
+        }, 1500);
+    };
+
+    if (status === "sending") {
         return (
-            <div className="flex flex-col items-center justify-center h-full text-center space-y-8">
-                <div className="relative">
-                    <div className="w-32 h-32 rounded-full border-4 border-slate-100 flex items-center justify-center">
-                        {status === "pushing" && <Loader2 size={48} className="animate-spin text-[#0d2870]" />}
-                        {status === "verifying" && <Activity size={48} className="animate-bounce text-blue-600" />}
-                        {status === "paid" && <CheckCircle2 size={48} className="text-emerald-500" />}
-                    </div>
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-6">
+                <Loader2 size={48} className="animate-spin text-[#0d2870]" />
+                <h3 className="text-lg font-black uppercase">Envoi en cours</h3>
+                <p className="text-sm text-slate-500">Push notification en attente...</p>
+            </div>
+        );
+    }
+
+    if (status === "countdown" || status === "paid") {
+        return (
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-6">
+                <div className="w-24 h-24 rounded-full border-4 border-slate-100 flex items-center justify-center">
+                    {status === "countdown" && (
+                        <span className="text-3xl font-black text-[#0d2870]">{countdown}</span>
+                    )}
+                    {status === "paid" && <CheckCircle2 size={48} className="text-emerald-500" />}
                 </div>
-                <div className="space-y-2">
-                    <h3 className="text-xl font-black uppercase tracking-tight leading-tight">
-                        {status === "pushing" && "Envoi du Push..."}
-                        {status === "verifying" && "Attente validation..."}
-                        {status === "paid" && "Paiement Réussi !"}
-                    </h3>
-                    <p className="text-sm font-bold text-slate-400 max-w-[200px] mx-auto uppercase">
-                        {status === "pushing" && "Une demande de paiement a été envoyée sur le terminal de l'assujetti."}
-                        {status === "verifying" && "L'assujetti doit saisir son code secret pour valider la transaction."}
-                        {status === "paid" && "Le montant de " + montant + "$ a été crédité au compte RTNC."}
-                    </p>
-                </div>
+                <h3 className="text-xl font-black uppercase">
+                    {status === "countdown" && "En attente de validation"}
+                    {status === "paid" && "Paiement réussi"}
+                </h3>
+                <p className="text-sm text-slate-500 max-w-[260px]">
+                    {status === "countdown" && "L'assujetti doit valider sur son terminal. Décompte en cours..."}
+                    {status === "paid" && "Le montant a été crédité au compte RTNC. Vous pouvez poursuivre."}
+                </p>
             </div>
         );
     }
 
     return (
-        <div className="space-y-6 flex flex-col h-full">
-            <div className="space-y-2">
-                <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight leading-8">Paiement</h2>
-                <p className="text-sm text-slate-400 font-medium">L'assujetti doit régulariser le montant dû immédiatement.</p>
+        <div className="space-y-5 flex flex-col h-full overflow-y-auto pb-4">
+            <div className="space-y-2 shrink-0">
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Paiement</h2>
+                <p className="text-[11px] text-slate-400">Choisissez le moyen de paiement et renseignez les informations.</p>
             </div>
 
-            <div className="p-6 bg-slate-900 rounded-[2rem] text-white flex justify-between items-center shadow-xl shadow-slate-900/20">
-                <div>
-                    <p className="text-[10px] font-black uppercase text-indigo-300 tracking-[0.2em]">Total à régler</p>
-                    <p className="text-3xl font-black mt-1">{montant}<span className="text-indigo-400 text-lg ml-1">$</span></p>
+            {/* Note de taxation (montants vérifiés / cohérents avec la base) */}
+            <div className="rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 space-y-3 shrink-0">
+                <p className="text-[10px] font-black uppercase text-[#0d2870] tracking-widest">Note de taxation</p>
+                <p className="text-[10px] text-slate-600">Montants calculés à partir des tarifs en base. À lire avant signature.</p>
+                <div className="grid grid-cols-1 gap-2 text-sm">
+                    <div className="flex justify-between">
+                        <span className="text-slate-500 font-bold">Droits (principal)</span>
+                        <span className="font-black text-slate-900">{Number(montantPrincipal).toFixed(2)} $</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-slate-500 font-bold">Amende (pénalités)</span>
+                        <span className="font-black text-slate-900">{Number(montantPenalite).toFixed(2)} $</span>
+                    </div>
+                    <div className="flex justify-between pt-2 border-t border-slate-200">
+                        <span className="font-black text-slate-900">Total à payer</span>
+                        <span className="font-black text-[#0d2870]">{Number(montantTotal).toFixed(2)} $</span>
+                    </div>
                 </div>
-                <CreditCard size={40} className="text-white opacity-20" />
+                <label className="flex items-center gap-3 cursor-pointer mt-3">
+                    <input
+                        type="checkbox"
+                        checked={noteSigned}
+                        onChange={(e) => setNoteSigned(e.target.checked)}
+                        className="w-4 h-4 rounded border-slate-300 text-[#0d2870]"
+                    />
+                    <span className="text-xs font-bold text-slate-700">J'ai lu et j'accepte la note de taxation</span>
+                </label>
             </div>
 
-            <div className="space-y-3">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Mode de règlement</p>
-                <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2 shrink-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-1">Moyen de paiement</p>
+                <div className="grid grid-cols-2 gap-2">
                     {PAIEMENT_METHODS.map((m) => (
                         <button
                             key={m.id}
+                            type="button"
                             onClick={() => setSelectedMethod(m.id)}
                             className={cn(
-                                "p-4 rounded-3xl border-2 flex flex-col gap-3 transition-all active:scale-95",
+                                "p-3 rounded-2xl border-2 flex flex-col gap-2 transition-all active:scale-[0.98]",
                                 selectedMethod === m.id ? "border-[#0d2870] bg-[#0d2870]/5" : "border-slate-100 bg-white"
                             )}
                         >
-                            <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", m.color)}>
-                                <m.icon size={20} />
+                            <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center", m.color)}>
+                                <m.icon size={18} />
                             </div>
-                            <span className="text-[10px] font-black uppercase tracking-tight text-slate-900">{m.label}</span>
+                            <span className="text-[9px] font-black uppercase tracking-tight text-slate-900 text-left leading-tight">{m.label}</span>
                         </button>
                     ))}
                 </div>
             </div>
 
-            <div className="flex-1" />
-            <button
-                disabled={!selectedMethod}
-                onClick={handlePay}
-                className="w-full py-5 bg-[#0d2870] text-white rounded-[2rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-xs shadow-xl shadow-[#0d2870]/20 active:scale-95 disabled:opacity-50"
-            >
-                Envoyer demande de paiement
-                <Smartphone size={18} />
-            </button>
+            {selectedMethod && (selectedMethod === "mtn" || selectedMethod === "airtel" || selectedMethod === "orange") && (
+                <div className="space-y-2 shrink-0">
+                    <label className="text-[10px] font-black uppercase text-slate-500 px-1">Numéro de téléphone</label>
+                    <Input
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="Ex: 081 234 5678 ou +243 81 234 5678"
+                        className="rounded-2xl bg-slate-50 border-slate-200 font-mono"
+                    />
+                    {operator && (
+                        <p className="text-[10px] font-bold text-slate-600">
+                            Opérateur détecté: <span className="text-[#0d2870]">{operator}</span>
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {selectedMethod === "virement" && (
+                <div className="space-y-3 shrink-0">
+                    <Input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Nom de la banque" className="rounded-2xl bg-slate-50" />
+                    <Input value={bankIban} onChange={(e) => setBankIban(e.target.value)} placeholder="IBAN / Numéro de compte" className="rounded-2xl bg-slate-50 font-mono" />
+                    <Input value={bankTitulaire} onChange={(e) => setBankTitulaire(e.target.value)} placeholder="Titulaire du compte" className="rounded-2xl bg-slate-50" />
+                </div>
+            )}
+
+            {selectedMethod === "carte" && (
+                <div className="space-y-3 shrink-0">
+                    <Input value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} placeholder="Numéro de carte" className="rounded-2xl bg-slate-50 font-mono" maxLength={19} />
+                    <div className="grid grid-cols-2 gap-2">
+                        <Input value={cardExpiry} onChange={(e) => setCardExpiry(e.target.value)} placeholder="MM/AA" className="rounded-2xl bg-slate-50" maxLength={5} />
+                        <Input value={cardCvv} onChange={(e) => setCardCvv(e.target.value)} placeholder="CVV" className="rounded-2xl bg-slate-50" maxLength={4} />
+                    </div>
+                    <Input value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} placeholder="Nom sur la carte" className="rounded-2xl bg-slate-50" />
+                </div>
+            )}
+
+            <div className="flex gap-3 shrink-0 pt-2">
+                <button type="button" onClick={onBack} className="flex-1 py-4 rounded-2xl border-2 border-slate-200 text-slate-600 font-black uppercase text-[10px]">
+                    Retour
+                </button>
+                <button
+                    type="button"
+                    disabled={!canSubmit()}
+                    onClick={handlePay}
+                    className="flex-1 py-4 bg-[#0d2870] text-white rounded-2xl font-black uppercase text-[10px] shadow-lg disabled:opacity-50"
+                >
+                    Envoyer demande de paiement
+                </button>
+            </div>
         </div>
     );
 }
@@ -1432,9 +1563,9 @@ function SuccessPhase({ ticket, onClose }: { ticket: ControlTicketData | null; o
                 </div>
                 <div className="space-y-4">
                     <div className="space-y-2">
-                        <h3 className="text-3xl font-black uppercase tracking-tight leading-tight">Mission Terminée</h3>
-                        <p className="text-sm font-bold text-slate-400 uppercase tracking-widest max-w-[250px] mx-auto">
-                            Le contrôle a été enregistré avec succès et le dossier de l'assujetti a été mis à jour.
+                        <h3 className="text-2xl font-black uppercase tracking-tight leading-tight">Paiement réussi</h3>
+                        <p className="text-sm font-bold text-slate-500 max-w-[260px] mx-auto">
+                            Tout est complet. Le contrôle et le paiement ont été enregistrés. Vous ne pouvez plus effectuer de paiement pour ce contrôle.
                         </p>
                     </div>
                     <div className="grid grid-cols-2 gap-3 max-w-[300px] mx-auto pt-4">
@@ -1454,7 +1585,7 @@ function SuccessPhase({ ticket, onClose }: { ticket: ControlTicketData | null; o
                         <button
                             type="button"
                             onClick={() => setShowTicketModal(true)}
-                            className="w-full py-4 bg-[#0d2870] text-white rounded-[2rem] font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                            className="w-full py-4 bg-[#0d2870] text-white rounded-2xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2"
                         >
                             <Receipt size={18} />
                             Voir le ticket
@@ -1463,9 +1594,9 @@ function SuccessPhase({ ticket, onClose }: { ticket: ControlTicketData | null; o
                     <button
                         type="button"
                         onClick={onClose}
-                        className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-widest text-xs shadow-xl shadow-slate-900/10 active:scale-95 transition-all"
+                        className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl active:scale-[0.98] transition-all"
                     >
-                        Retour au Dashboard
+                        Retour à l&apos;historique
                     </button>
                 </div>
             </div>

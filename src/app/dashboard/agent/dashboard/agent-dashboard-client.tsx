@@ -6,6 +6,7 @@ import {
     Home,
     Search,
     ClipboardList,
+    Receipt,
     User,
     Bell,
     ChevronRight,
@@ -25,7 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { MobileBottomNav, AgentTab } from "@/components/agent/MobileBottomNav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { searchAssujettiAction, getAssujettiDetailsAction, calculateControlAction } from "../actions";
+import { searchAssujettiAction, getAssujettiDetailsAction, calculateControlAction, getAgentFacturesAction } from "../actions";
 import { toast } from "sonner";
 import { clearSession } from "@/lib/auth/session";
 import { useRouter } from "next/navigation";
@@ -44,6 +45,7 @@ export default function AgentDashboardClient({ agentId, communeName }: AgentDash
     const [activeControlAssujetti, setActiveControlAssujetti] = useState<any | null>(null);
     const [stats, setStats] = useState<{
         dailyCount: number;
+        dailyTotal?: number;
         monthlyTotal: number;
         recentActivities: {
             id: string;
@@ -106,6 +108,7 @@ export default function AgentDashboardClient({ agentId, communeName }: AgentDash
                                 nbRadioDeclare: activeControlAssujetti.nbRadioDeclare ?? 0,
                             }}
                             onClose={() => setActiveControlAssujetti(null)}
+                            onSuccessClose={() => setActiveTab("factures")}
                         />
                     </motion.div>
                 )}
@@ -138,8 +141,18 @@ export default function AgentDashboardClient({ agentId, communeName }: AgentDash
                         {activeTab === "search" && (
                             <SearchTab onSelectAssujetti={setActiveControlAssujetti} />
                         )}
-                        {activeTab === "reports" && (
-                            <ReportsTab />
+                        {activeTab === "factures" && (
+                            <FacturesTab />
+                        )}
+                        {activeTab === "rapports" && (
+                            <RapportsTab
+                                stats={stats}
+                                isLoadingStats={isLoadingStats}
+                                onRefresh={async () => {
+                                    const res = await getAgentDashboardStats();
+                                    if (res.success && res.data) setStats(res.data);
+                                }}
+                            />
                         )}
                         {activeTab === "profile" && (
                             <ProfileTab agentId={agentId} communeName={communeName} onLogout={handleLogout} />
@@ -323,8 +336,15 @@ function SearchTab({ onSelectAssujetti }: { onSelectAssujetti: (a: any) => void 
                 toast.error(detailRes.success === false ? detailRes.error : "Assujetti introuvable");
                 return;
             }
-            const full = detailRes.data as any;
             const controlData = controlRes.success && controlRes.data ? controlRes.data : {};
+            if ((controlData as { alreadyControlled?: boolean }).alreadyControlled) {
+                const ex = (controlData as { exerciceControlled?: number }).exerciceControlled;
+                toast.error(ex != null
+                    ? `Cet assujetti a déjà été contrôlé pour l'exercice ${ex}. Un seul contrôle par période.`
+                    : "Cet assujetti a déjà été contrôlé. Un seul contrôle par période.");
+                return;
+            }
+            const full = detailRes.data as any;
             onSelectAssujetti({
                 ...full,
                 nbTvDeclare: controlData.nbTvDeclare ?? 0,
@@ -403,18 +423,145 @@ function SearchTab({ onSelectAssujetti }: { onSelectAssujetti: (a: any) => void 
     );
 }
 
-function ReportsTab() {
-    return (
-        <div className="space-y-6 pt-4">
-            <div className="px-1">
-                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight tracking-tighter">Activité</h2>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Historique & Rapports</p>
-            </div>
+function RapportsTab({
+    stats,
+    isLoadingStats,
+    onRefresh,
+}: {
+    stats: { dailyCount?: number; dailyTotal?: number; monthlyTotal?: number } | null;
+    isLoadingStats: boolean;
+    onRefresh: () => Promise<void>;
+}) {
+    const [view, setView] = useState<"menu" | "historique" | "synthese">("menu");
+    const [factures, setFactures] = useState<{
+        id: string;
+        dateControle: Date | null;
+        exercice: number;
+        nomRaisonSociale: string;
+        identifiantFiscal: string | null;
+        montantTotal: number;
+        statutPaiement: string;
+    }[]>([]);
+    const [loadingList, setLoadingList] = useState(false);
 
+    useEffect(() => {
+        if (view !== "historique") return;
+        let cancelled = false;
+        setLoadingList(true);
+        (async () => {
+            const res = await getAgentFacturesAction();
+            if (!cancelled && res.success && res.data) setFactures(res.data);
+            if (!cancelled) setLoadingList(false);
+        })();
+        return () => { cancelled = true; };
+    }, [view]);
+
+    if (view === "historique") {
+        return (
+            <div className="space-y-4 pt-4 pb-6">
+                <div className="flex items-center gap-3 px-1">
+                    <button type="button" onClick={() => setView("menu")} className="p-2 rounded-xl bg-slate-100 text-slate-600">
+                        <ChevronRight className="w-5 h-5 rotate-180" />
+                    </button>
+                    <h2 className="text-lg font-black text-slate-900 uppercase">Historique complet</h2>
+                </div>
+                {loadingList ? (
+                    <div className="space-y-2">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                            <div key={i} className="h-16 bg-slate-50 animate-pulse rounded-2xl" />
+                        ))}
+                    </div>
+                ) : factures.length === 0 ? (
+                    <div className="py-12 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                        <ClipboardList size={32} className="mx-auto text-slate-300 mb-3" />
+                        <p className="text-sm font-black uppercase text-slate-500">Aucun contrôle</p>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {factures.map((f) => (
+                            <div key={f.id} className="flex items-center gap-4 p-4 bg-white border border-slate-100 rounded-2xl shadow-sm border-l-4 border-l-[#0d2870]">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-black uppercase text-slate-900 truncate">{f.nomRaisonSociale}</p>
+                                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">
+                                        {f.dateControle ? new Date(f.dateControle).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "—"} · Ex. {f.exercice}
+                                    </p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <p className="text-sm font-black text-slate-900">{Number(f.montantTotal).toFixed(0)} $</p>
+                                    <span className={cn(
+                                        "inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase",
+                                        f.statutPaiement === "paye" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                                    )}>
+                                        {f.statutPaiement === "paye" ? "Payé" : "Non payé"}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    if (view === "synthese") {
+        const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+        return (
+            <div className="space-y-6 pt-4 pb-6">
+                <div className="flex items-center gap-3 px-1">
+                    <button type="button" onClick={() => setView("menu")} className="p-2 rounded-xl bg-slate-100 text-slate-600">
+                        <ChevronRight className="w-5 h-5 rotate-180" />
+                    </button>
+                    <h2 className="text-lg font-black text-slate-900 uppercase">Synthèse journalière</h2>
+                </div>
+                <p className="text-[11px] text-slate-500 px-1 capitalize">{today}</p>
+                <div className="grid grid-cols-2 gap-3">
+                    <Card className="border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                        <CardContent className="p-5">
+                            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Contrôles (aujourd&apos;hui)</p>
+                            <p className="text-2xl font-black text-[#0d2870] mt-1">{stats?.dailyCount ?? 0}</p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
+                        <CardContent className="p-5">
+                            <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Collecté (aujourd&apos;hui)</p>
+                            <p className="text-2xl font-black text-emerald-600 mt-1">{(stats?.dailyTotal ?? 0).toLocaleString()} $</p>
+                        </CardContent>
+                    </Card>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase">Résumé du jour</p>
+                    <p className="text-xs text-slate-600 mt-1">
+                        {(stats?.dailyCount ?? 0) === 0
+                            ? "Aucun contrôle enregistré aujourd'hui."
+                            : `${stats?.dailyCount} contrôle(s) effectué(s), ${(stats?.dailyTotal ?? 0).toLocaleString()} $ collecté(s) aujourd'hui.`}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => onRefresh()}
+                    className="w-full py-3 rounded-2xl border-2 border-[#0d2870] text-[#0d2870] font-black uppercase text-[10px] flex items-center justify-center gap-2"
+                >
+                    <Activity size={16} />
+                    Actualiser
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6 pt-4 pb-6">
+            <div className="px-1">
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Rapports</h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Historique complet et synthèse journalière</p>
+            </div>
             <div className="grid grid-cols-1 gap-4">
-                <button className="flex items-center justify-between p-5 bg-white border border-slate-100 rounded-3xl shadow-sm active:bg-slate-50 transition-all text-left">
+                <button
+                    type="button"
+                    onClick={() => setView("historique")}
+                    className="flex items-center justify-between p-5 bg-white border border-slate-100 rounded-3xl shadow-sm active:bg-slate-50 transition-all text-left"
+                >
                     <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                        <div className="w-12 h-12 rounded-2xl bg-[#0d2870]/10 text-[#0d2870] flex items-center justify-center">
                             <ClipboardList size={24} />
                         </div>
                         <div>
@@ -424,24 +571,98 @@ function ReportsTab() {
                     </div>
                     <ChevronRight size={16} className="text-slate-300" />
                 </button>
-                <button className="flex items-center justify-between p-5 bg-white border border-slate-100 rounded-3xl shadow-sm active:bg-slate-50 transition-all text-left">
+                <button
+                    type="button"
+                    onClick={() => setView("synthese")}
+                    className="flex items-center justify-between p-5 bg-white border border-slate-100 rounded-3xl shadow-sm active:bg-slate-50 transition-all text-left"
+                >
                     <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
                             <DollarSign size={24} />
                         </div>
                         <div>
                             <p className="text-sm font-black uppercase text-slate-900">Synthèse journalière</p>
-                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Rapport financier (J)</p>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Contrôles et collecte du jour</p>
                         </div>
                     </div>
                     <ChevronRight size={16} className="text-slate-300" />
                 </button>
             </div>
+        </div>
+    );
+}
 
-            <div className="p-6 border-2 border-dashed border-slate-100 rounded-3xl flex flex-col items-center justify-center text-center space-y-2 grayscale opacity-50">
-                <Activity size={24} className="text-slate-300" />
-                <p className="text-[10px] font-black uppercase text-slate-400">Statistiques avancées bientôt disponibles</p>
+function FacturesTab() {
+    const [factures, setFactures] = useState<{
+        id: string;
+        dateControle: Date | null;
+        exercice: number;
+        nomRaisonSociale: string;
+        identifiantFiscal: string | null;
+        montantTotal: number;
+        statutPaiement: string;
+    }[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            const res = await getAgentFacturesAction();
+            if (!cancelled && res.success && res.data) setFactures(res.data);
+            if (!cancelled) setLoading(false);
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    return (
+        <div className="space-y-6 pt-4 pb-6">
+            <div className="px-1">
+                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Factures</h2>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Toutes les factures générées par vos contrôles</p>
             </div>
+
+            {loading ? (
+                <div className="space-y-2">
+                    {[1, 2, 3, 4].map((i) => (
+                        <div key={i} className="h-20 bg-slate-50 animate-pulse rounded-2xl" />
+                    ))}
+                </div>
+            ) : factures.length === 0 ? (
+                <div className="py-12 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                    <Receipt size={32} className="mx-auto text-slate-300 mb-3" />
+                    <p className="text-sm font-black uppercase text-slate-500">Aucune facture</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Les factures apparaissent après vos contrôles terrain.</p>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {factures.map((f) => (
+                        <div
+                            key={f.id}
+                            className="flex items-center gap-4 p-4 bg-white border border-slate-100 rounded-2xl shadow-sm border-l-4 border-l-[#0d2870]"
+                        >
+                            <div className="w-10 h-10 rounded-xl bg-[#0d2870]/10 flex items-center justify-center text-[#0d2870] shrink-0">
+                                <Receipt size={20} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-xs font-black uppercase text-slate-900 truncate">{f.nomRaisonSociale}</p>
+                                <p className="text-[10px] font-bold text-slate-400 mt-0.5">
+                                    {f.dateControle ? new Date(f.dateControle).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "—"} · Ex. {f.exercice}
+                                    {f.identifiantFiscal && ` · ${f.identifiantFiscal}`}
+                                </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                                <p className="text-sm font-black text-slate-900">{Number(f.montantTotal).toFixed(0)} $</p>
+                                <span className={cn(
+                                    "inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase",
+                                    f.statutPaiement === "paye" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                                )}>
+                                    {f.statutPaiement === "paye" ? "Payé" : "Non payé"}
+                                </span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

@@ -183,7 +183,7 @@ export async function POST(req: NextRequest) {
       return control;
     });
 
-    // SMS à l'assujetti après contrôle terrain (sender: rtnc rdv)
+    // SMS à l'assujetti après contrôle terrain (sender: RTNC RAA)
     try {
       const [a] = await db
         .select({

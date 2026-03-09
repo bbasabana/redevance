@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import { eq, and, or, ilike, sql, count, desc, gte, lt } from "drizzle-orm";
 import { getSession } from "@/lib/auth/session";
+import { sendControlNotificationSms } from "@/lib/sms/messagebird";
 
 export async function searchAssujettiAction(query: string) {
     try {
@@ -86,6 +87,16 @@ export async function calculateControlAction(assujettiId: string) {
             .orderBy(desc(declarations.exercice))
             .limit(1);
 
+        const exerciceYear = lastDecl ? lastDecl.exercice : new Date().getFullYear();
+        const [existingControl] = await db
+            .select({ id: controlesTerrain.id, exercice: controlesTerrain.exercice })
+            .from(controlesTerrain)
+            .where(and(
+                eq(controlesTerrain.assujettiId, assujettiId),
+                eq(controlesTerrain.exercice, exerciceYear)
+            ))
+            .limit(1);
+
         if (!lastDecl) {
             return {
                 success: true,
@@ -93,7 +104,9 @@ export async function calculateControlAction(assujettiId: string) {
                     nbTvDeclare: 0,
                     nbRadioDeclare: 0,
                     exercice: new Date().getFullYear(),
-                    tarifUnitaire: 10 // Default fallback
+                    tarifUnitaire: 10,
+                    alreadyControlled: !!existingControl,
+                    exerciceControlled: existingControl?.exercice ?? null,
                 }
             };
         }
@@ -124,10 +137,57 @@ export async function calculateControlAction(assujettiId: string) {
                 nbTvDeclare,
                 nbRadioDeclare,
                 exercice: lastDecl.exercice,
-                tarifUnitaire
+                tarifUnitaire,
+                alreadyControlled: !!existingControl,
+                exerciceControlled: existingControl?.exercice ?? null,
             }
         };
     } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+/** Liste des factures (contrôles terrain) de l’agent connecté. */
+export async function getAgentFacturesAction() {
+    try {
+        const session = await getSession();
+        if (!session?.user?.userId) return { success: false, error: "Non autorisé" };
+
+        const agentId = session.user.userId;
+        const rows = await db
+            .select({
+                id: controlesTerrain.id,
+                dateControle: controlesTerrain.dateControle,
+                exercice: controlesTerrain.exercice,
+                assujettiId: assujettis.id,
+                nomRaisonSociale: assujettis.nomRaisonSociale,
+                identifiantFiscal: assujettis.identifiantFiscal,
+                nif: assujettis.nif,
+                montantTotal: notesRectificativesTerrain.montantTotal,
+                statutPaiement: notesRectificativesTerrain.statutPaiement,
+            })
+            .from(controlesTerrain)
+            .innerJoin(assujettis, eq(controlesTerrain.assujettiId, assujettis.id))
+            .leftJoin(notesRectificativesTerrain, eq(notesRectificativesTerrain.controleId, controlesTerrain.id))
+            .where(eq(controlesTerrain.agentId, agentId))
+            .orderBy(desc(controlesTerrain.dateControle));
+
+        return {
+            success: true,
+            data: rows.map((r) => ({
+                id: r.id,
+                dateControle: r.dateControle,
+                exercice: r.exercice,
+                assujettiId: r.assujettiId,
+                nomRaisonSociale: r.nomRaisonSociale ?? "—",
+                identifiantFiscal: r.identifiantFiscal ?? null,
+                nif: r.nif ?? null,
+                montantTotal: r.montantTotal ? Number(r.montantTotal) : 0,
+                statutPaiement: r.statutPaiement ?? "non_paye",
+            })),
+        };
+    } catch (error: any) {
+        console.error("getAgentFactures error:", error);
         return { success: false, error: error.message };
     }
 }
@@ -204,6 +264,22 @@ export async function saveControlAction(data: {
         const session = await getSession();
         if (!session || !session.user.userId) return { success: false, error: "Non autorisé" };
 
+        // Un seul contrôle par assujetti et par exercice (pas deux fois)
+        const [existing] = await db
+            .select({ id: controlesTerrain.id })
+            .from(controlesTerrain)
+            .where(and(
+                eq(controlesTerrain.assujettiId, data.assujettiId),
+                eq(controlesTerrain.exercice, data.exercice)
+            ))
+            .limit(1);
+        if (existing) {
+            return {
+                success: false,
+                error: `Cet assujetti a déjà été contrôlé pour l'exercice ${data.exercice}. Un seul contrôle par période.`,
+            };
+        }
+
         const result = await db.transaction(async (tx) => {
             // 1. Create Control record
             const [control] = await tx.insert(controlesTerrain).values({
@@ -243,6 +319,29 @@ export async function saveControlAction(data: {
 
             return control;
         });
+
+        // SMS à l'assujetti après contrôle (sender: RTNC RAA) — une seule fois car contrôle unique
+        try {
+            const [a] = await db
+                .select({
+                    nomRaisonSociale: assujettis.nomRaisonSociale,
+                    telephonePrincipal: assujettis.telephonePrincipal,
+                })
+                .from(assujettis)
+                .where(eq(assujettis.id, data.assujettiId))
+                .limit(1);
+            if (a?.telephonePrincipal) {
+                await sendControlNotificationSms({
+                    phone: a.telephonePrincipal,
+                    nom: a.nomRaisonSociale ?? "Assujetti",
+                    montant: `${Number(data.montantTotal).toFixed(0)} $`,
+                    periode: String(data.exercice),
+                    reference: `CT-${result.id.toString().slice(0, 8)}`,
+                });
+            }
+        } catch (smsErr) {
+            console.error("SMS notification contrôle (web):", smsErr);
+        }
 
         return { success: true, data: result };
     } catch (error: any) {
@@ -286,6 +385,18 @@ export async function getAgentDashboardStats() {
                 )
             );
 
+        // 3b. Sum Daily Collections (synthèse journalière)
+        const [dailyColl] = await db
+            .select({ total: sql<string>`sum(montant_total)` })
+            .from(notesRectificativesTerrain)
+            .innerJoin(controlesTerrain, eq(notesRectificativesTerrain.controleId, controlesTerrain.id))
+            .where(
+                and(
+                    eq(controlesTerrain.agentId, agentId),
+                    gte(notesRectificativesTerrain.datePaiement, startOfToday)
+                )
+            );
+
         // 4. Fetch Recent Controls
         const recent = await db
             .select({
@@ -308,6 +419,7 @@ export async function getAgentDashboardStats() {
             success: true,
             data: {
                 dailyCount: dailyControls.count || 0,
+                dailyTotal: Number(dailyColl.total) || 0,
                 monthlyTotal: Number(monthlyColl.total) || 0,
                 recentActivities: recent.map(r => ({
                     id: r.id,

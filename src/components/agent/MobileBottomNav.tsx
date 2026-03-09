@@ -1,10 +1,10 @@
 "use client";
 
-import { Home, Search, ClipboardList, User } from "lucide-react";
+import { Home, Search, Receipt, ClipboardList, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
-export type AgentTab = "home" | "search" | "reports" | "profile";
+export type AgentTab = "home" | "search" | "factures" | "rapports" | "profile";
 
 interface MobileBottomNavProps {
     activeTab: AgentTab;
@@ -15,7 +15,8 @@ export function MobileBottomNav({ activeTab, onTabChange }: MobileBottomNavProps
     const tabs = [
         { id: "home", label: "Accueil", icon: Home },
         { id: "search", label: "Recherche", icon: Search },
-        { id: "reports", label: "Rapports", icon: ClipboardList },
+        { id: "factures", label: "Factures", icon: Receipt },
+        { id: "rapports", label: "Rapports", icon: ClipboardList },
         { id: "profile", label: "Profil", icon: User },
     ];
 

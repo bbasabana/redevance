@@ -25,6 +25,11 @@ const SyncManager = dynamic(
   { ssr: false }
 );
 
+const PwaInstallPrompt = dynamic(
+  () => import("@/components/pwa/PwaInstallPrompt").then((m) => m.PwaInstallPrompt),
+  { ssr: false }
+);
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -36,6 +41,7 @@ export default function RootLayout({
         <Providers>
           <SyncManager />
           {children}
+          <PwaInstallPrompt />
           <Toaster position="bottom-right" />
         </Providers>
       </body>

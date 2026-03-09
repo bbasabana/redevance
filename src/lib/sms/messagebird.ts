@@ -1,11 +1,11 @@
 /**
  * Envoi SMS via MessageBird.
- * Sender ID (originator) : "rtnc rdv" (Référence RTNC Redevance).
+ * Sender ID (originator) : "RTNC RAA" (RTNC Redevance Audiovisuelle Assujettis).
  * Configure MESSAGEBIRD_API_KEY dans .env
  */
 
 const MESSAGEBIRD_API_KEY = process.env.MESSAGEBIRD_API_KEY;
-const DEFAULT_ORIGINATOR = "rtnc rdv";
+const DEFAULT_ORIGINATOR = "RTNC RAA";
 
 function getClient(): { messages: { create: (params: unknown, cb: (err: unknown, res: unknown) => void) => void } } | null {
   if (!MESSAGEBIRD_API_KEY) return null;
@@ -22,7 +22,7 @@ function getClient(): { messages: { create: (params: unknown, cb: (err: unknown,
  * Envoie un SMS à un ou plusieurs numéros.
  * @param recipients - Numéros au format international (ex: 243812345678)
  * @param body - Texte du message
- * @param originator - Sender ID (défaut: "rtnc rdv")
+ * @param originator - Sender ID (défaut: "RTNC RAA")
  * @returns true si envoyé, false si service indisponible ou erreur
  */
 export async function sendSms(
@@ -77,7 +77,7 @@ export async function sendPaymentConfirmationSms(params: {
     return { ok: false, error: "Numéro manquant" };
   }
   const ref = params.reference ? ` Réf: ${params.reference}.` : "";
-  const body = `RTNC RDV: ${params.nom}, vous avez payé ${params.montant} pour la période ${params.periode}.${ref}`;
+  const body = `RTNC RAA: ${params.nom}, vous avez payé ${params.montant} pour la période ${params.periode}.${ref}`;
   return sendSms([params.phone], body);
 }
 
@@ -96,6 +96,6 @@ export async function sendControlNotificationSms(params: {
     return { ok: false, error: "Numéro manquant" };
   }
   const ref = params.reference ? ` Réf: ${params.reference}.` : "";
-  const body = `RTNC RDV: ${params.nom}, contrôle terrain enregistré. Montant: ${params.montant}, période ${params.periode}.${ref}`;
+  const body = `RTNC RAA: ${params.nom}, contrôle terrain enregistré. Montant: ${params.montant}, période ${params.periode}.${ref}`;
   return sendSms([params.phone], body);
 }
