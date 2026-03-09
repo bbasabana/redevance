@@ -21,6 +21,8 @@ const LABELS: Record<string, string> = {
   idNat: "ID National",
   representantLegal: "Représentant légal",
   adresseSiege: "Adresse siège",
+  adresseConstatee: "Adresse constatée",
+  typeStructure: "Structure",
   typeActivite: "Catégorie (activité)",
   sousTypePm: "Sous-type PM",
 };
@@ -169,7 +171,7 @@ function DetailModal({
               Données identité / légales
             </h3>
             <div className="space-y-3">
-              {(["nomRaisonSociale", "typePersonne", "nif", "rccm", "idNat", "representantLegal", "adresseSiege", "typeActivite", "sousTypePm"] as const).map(
+              {(["nomRaisonSociale", "typePersonne", "nif", "rccm", "idNat", "representantLegal", "adresseSiege", "adresseConstatee", "typeStructure", "typeActivite", "sousTypePm"] as const).map(
                 (key) => {
                   const oldVal = detail.ancien[key] ?? "—";
                   const newVal = detail.nouveau[key] ?? "—";

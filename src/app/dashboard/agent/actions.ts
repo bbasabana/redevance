@@ -111,8 +111,12 @@ export async function calculateControlAction(assujettiId: string) {
             .filter(l => l.categorieAppareil === 'Radios' || l.categorieAppareil === 'Radio')
             .reduce((sum, l) => sum + (l.nombre || 0), 0);
 
-        // 3. Get applicable tariff (simplistic for now: take from first line or default)
-        const tarifUnitaire = lines.length > 0 ? Number(lines[0].tarifUnitaire) : 10;
+        // 3. Get applicable tariff: from first line or taxation_rules, never 0
+        let tarifUnitaire = 10;
+        if (lines.length > 0 && lines[0].tarifUnitaire != null) {
+            const fromLine = Number(lines[0].tarifUnitaire);
+            if (fromLine > 0) tarifUnitaire = fromLine;
+        }
 
         return {
             success: true,
@@ -128,6 +132,42 @@ export async function calculateControlAction(assujettiId: string) {
     }
 }
 
+/** Calcule les montants (principal, pénalité, total) côté serveur à partir des données en base (déclarations + tarif). */
+export async function getControlAmountsAction(
+    assujettiId: string,
+    nbTvConstate: number,
+    nbRadioConstate: number
+) {
+    try {
+        const session = await getSession();
+        if (!session?.user?.userId) return { success: false, error: "Non autorisé" };
+
+        const calc = await calculateControlAction(assujettiId);
+        if (!calc.success || !calc.data) return { success: false, error: calc.error || "Données introuvables" };
+
+        const { nbTvDeclare, nbRadioDeclare, tarifUnitaire } = calc.data;
+        const ecartTv = Math.max(0, nbTvConstate - nbTvDeclare);
+        const ecartRadio = Math.max(0, nbRadioConstate - nbRadioDeclare);
+        const montantPrincipal = (ecartTv + ecartRadio) * tarifUnitaire;
+        const montantPenalite = montantPrincipal * 0.5;
+        const montantTotal = montantPrincipal + montantPenalite;
+
+        return {
+            success: true,
+            data: {
+                montantPrincipal: Math.round(montantPrincipal * 100) / 100,
+                montantPenalite: Math.round(montantPenalite * 100) / 100,
+                montantTotal: Math.round(montantTotal * 100) / 100,
+                tarifUnitaire,
+                nbTvDeclare,
+                nbRadioDeclare,
+            },
+        };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
 /** Données d'identification constatées (pour comparaison admin) */
 export type DataConstateeIdentification = {
     nomRaisonSociale?: string;
@@ -136,9 +176,11 @@ export type DataConstateeIdentification = {
     rccm?: string;
     representantLegal?: string;
     adresseSiege?: string;
+    adresseConstatee?: string;
     idNat?: string;
     typeActivite?: string;
     sousTypePm?: string;
+    typeStructure?: string;
 };
 
 export async function saveControlAction(data: {

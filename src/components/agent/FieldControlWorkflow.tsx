@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     X,
@@ -21,7 +21,9 @@ import {
     Users,
     MapPin,
     Activity,
-    User
+    User,
+    Receipt,
+    Printer
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,11 +31,27 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
     calculateControlAction,
+    getControlAmountsAction,
     saveControlAction,
     checkAddressAction
 } from "@/app/dashboard/agent/actions";
 
 export type ControlPhase = "identification" | "constat" | "analyse" | "paiement" | "pv" | "success";
+
+/** Map id activité (identification) → libellé affiché (constat) */
+const ACTIVITY_ID_TO_LABEL: Record<string, string> = {
+    hotel: "Hôtel",
+    restaurant: "Restaurant",
+    bar: "Bar",
+    lounge: "Lounge Bar",
+    paris_sportifs: "Paris Sportifs",
+    flat: "Guest House",
+    guest_house: "Guest House",
+    chaine_tv: "Chaîne Télé / Radio",
+    autre: "Autre",
+};
+
+const SECTEURS_ORDER = ["Hôtel", "Restaurant", "Bar", "Lounge Bar", "Paris Sportifs", "Guest House", "Chaîne Télé / Radio", "Autre"];
 
 interface Assujetti {
     id: string;
@@ -47,6 +65,9 @@ interface Assujetti {
     idNat?: string | null;
     typeActivite?: string | null;
     sousTypePm?: string | null;
+    typeStructure?: string | null;
+    activites?: string[] | null;
+    precisionAutre?: string | null;
     nbTvDeclare: number;
     nbRadioDeclare: number;
 }
@@ -56,11 +77,33 @@ interface FieldControlWorkflowProps {
     onClose: () => void;
 }
 
+/** Ticket de contrôle (aligné mobile) pour affichage et impression */
+export interface ControlTicketData {
+    ticketId: string;
+    assujettiName: string;
+    nif?: string | null;
+    identifiantFiscal?: string | null;
+    address?: string | null;
+    tvDeclared: number;
+    tvConstate: number;
+    radioDeclared: number;
+    radioConstate: number;
+    sectors: string[];
+    paymentMethod: string;
+    montantPrincipal: number;
+    montantPenalite: number;
+    montantTotal: number;
+    exercice: number;
+    dateOperation: Date;
+    agentName?: string | null;
+}
+
 const phasesArray: ControlPhase[] = ["identification", "constat", "analyse", "paiement", "pv", "success"];
 
 export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflowProps) {
     const [phase, setPhase] = useState<ControlPhase>("identification");
     const [isPending, startTransition] = useTransition();
+    const controlSavedRef = useRef(false);
 
     // Server-fetched data
     const [declaredData, setDeclaredData] = useState({
@@ -84,12 +127,21 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
         idNat: "",
         typeActivite: "",
         sousTypePm: "",
+        typeStructure: "",
         secteursActivite: [] as string[],
         precisionAutre: "",
         adresseConstatee: "",
     });
     const [isLocating, setIsLocating] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [paymentMethod, setPaymentMethod] = useState<string | null>(null);
+    const [generatedTicket, setGeneratedTicket] = useState<ControlTicketData | null>(null);
+    /** Montants calculés côté serveur (base de données) pour l’analyse des écarts */
+    const [serverAmounts, setServerAmounts] = useState<{
+        montantPrincipal: number;
+        montantPenalite: number;
+        montantTotal: number;
+    } | null>(null);
 
     const handleLocate = () => {
         setIsLocating(true);
@@ -135,11 +187,33 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
         fetchData();
     }, [assujetti.id]);
 
+    // Charger les montants depuis la base à l’entrée en phase analyse
+    useEffect(() => {
+        if (phase !== "analyse") return;
+        let cancelled = false;
+        (async () => {
+            const res = await getControlAmountsAction(assujetti.id, nbTvConstate, nbRadioConstate);
+            if (cancelled || !res.success || !res.data) return;
+            setServerAmounts({
+                montantPrincipal: res.data.montantPrincipal,
+                montantPenalite: res.data.montantPenalite,
+                montantTotal: res.data.montantTotal,
+            });
+        })();
+        return () => { cancelled = true; };
+    }, [phase, assujetti.id, nbTvConstate, nbRadioConstate]);
+
     // Préremplir les données constatées depuis l'assujetti à l'entrée en phase constat
     useEffect(() => {
         if (phase !== "constat") return;
+        const activites = (assujetti.activites as string[] | undefined) ?? [];
+        const secteursFromActivites = activites
+            .map((id) => ACTIVITY_ID_TO_LABEL[id] ?? id)
+            .filter((l) => SECTEURS_ORDER.includes(l) || l === "Autre");
         setConstatData((prev) => {
-            if (prev.nomRaisonSociale !== "" && prev.nif !== "") return prev;
+            if (prev.nomRaisonSociale !== "" && prev.nif !== "") {
+                return { ...prev, secteursActivite: prev.secteursActivite.length ? prev.secteursActivite : secteursFromActivites };
+            }
             return {
                 ...prev,
                 nomRaisonSociale: assujetti.nomRaisonSociale ?? "",
@@ -151,20 +225,30 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
                 idNat: assujetti.idNat ?? "",
                 typeActivite: assujetti.typeActivite ?? "",
                 sousTypePm: assujetti.sousTypePm ?? "",
+                typeStructure: assujetti.typeStructure ?? "",
+                secteursActivite: secteursFromActivites.length ? secteursFromActivites : prev.secteursActivite,
+                precisionAutre: assujetti.precisionAutre ?? prev.precisionAutre,
             };
         });
-    }, [phase, assujetti.nomRaisonSociale, assujetti.typePersonne, assujetti.nif, assujetti.rccm, assujetti.representantLegal, assujetti.adresseSiege, assujetti.idNat, assujetti.typeActivite, assujetti.sousTypePm]);
+    }, [phase, assujetti.nomRaisonSociale, assujetti.typePersonne, assujetti.nif, assujetti.rccm, assujetti.representantLegal, assujetti.adresseSiege, assujetti.idNat, assujetti.typeActivite, assujetti.sousTypePm, assujetti.typeStructure, assujetti.activites, assujetti.precisionAutre]);
 
-    // Derived values for Analysis
+    // Derived values for Analysis (client-side fallback)
     const ecartTv = nbTvConstate - declaredData.nbTv;
     const ecartRadio = nbRadioConstate - declaredData.nbRadio;
-
-    // Calculated Penalties
-    const montantPrincipal = (Math.max(0, ecartTv) + Math.max(0, ecartRadio)) * declaredData.tarifUnitaire;
-    const montantPenalite = montantPrincipal * 0.5; // 50% penalty
-    const montantTotal = montantPrincipal + montantPenalite;
+    const clientPrincipal = (Math.max(0, ecartTv) + Math.max(0, ecartRadio)) * declaredData.tarifUnitaire;
+    const clientPenalite = clientPrincipal * 0.5;
+    const clientTotal = clientPrincipal + clientPenalite;
+    // Use server amounts when available (DB), else client
+    const montantPrincipal = serverAmounts?.montantPrincipal ?? clientPrincipal;
+    const montantPenalite = serverAmounts?.montantPenalite ?? clientPenalite;
+    const montantTotal = serverAmounts?.montantTotal ?? clientTotal;
 
     const handleSave = async () => {
+        if (controlSavedRef.current) {
+            toast.info("Le contrôle a déjà été enregistré.");
+            setPhase("success");
+            return;
+        }
         setIsLoading(true);
         const res = await saveControlAction({
             assujettiId: assujetti.id,
@@ -187,13 +271,37 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
                 rccm: constatData.rccm || undefined,
                 representantLegal: constatData.representantLegal || undefined,
                 adresseSiege: constatData.adresseSiege || undefined,
+                adresseConstatee: constatData.adresseConstatee || undefined,
                 idNat: constatData.idNat || undefined,
                 typeActivite: constatData.typeActivite || undefined,
                 sousTypePm: constatData.sousTypePm || undefined,
+                typeStructure: constatData.typeStructure || undefined,
             },
         });
 
         if (res.success) {
+            controlSavedRef.current = true;
+            const controlId = (res.data as { id?: string })?.id;
+            const ticket: ControlTicketData = {
+                ticketId: controlId ? `CT-${controlId.slice(0, 8)}` : `CT-${Date.now()}`,
+                assujettiName: assujetti.nomRaisonSociale,
+                nif: assujetti.nif ?? null,
+                identifiantFiscal: assujetti.identifiantFiscal ?? null,
+                address: constatData.adresseConstatee || assujetti.adresseSiege || null,
+                tvDeclared: declaredData.nbTv,
+                tvConstate: nbTvConstate,
+                radioDeclared: declaredData.nbRadio,
+                radioConstate: nbRadioConstate,
+                sectors: constatData.secteursActivite ?? [],
+                paymentMethod: paymentMethod ?? "Non précisé",
+                montantPrincipal,
+                montantPenalite,
+                montantTotal,
+                exercice: declaredData.exercice,
+                dateOperation: new Date(),
+                agentName: null,
+            };
+            setGeneratedTicket(ticket);
             setPhase("success");
         } else {
             toast.error(res.error || "Erreur lors de l'enregistrement");
@@ -279,6 +387,7 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
                         )}
                         {phase === "constat" && (
                             <ConstatPhase
+                                assujetti={assujetti}
                                 tv={nbTvConstate}
                                 setTv={setNbTvConstate}
                                 radio={nbRadioConstate}
@@ -309,7 +418,10 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
                         {phase === "paiement" && (
                             <PaiementPhase
                                 montant={montantTotal}
-                                onNext={nextPhase}
+                                onNext={(method) => {
+                                    setPaymentMethod(method);
+                                    nextPhase();
+                                }}
                                 onBack={prevPhase}
                             />
                         )}
@@ -322,7 +434,10 @@ export function FieldControlWorkflow({ assujetti, onClose }: FieldControlWorkflo
                             />
                         )}
                         {phase === "success" && (
-                            <SuccessPhase onClose={onClose} />
+                            <SuccessPhase
+                                ticket={generatedTicket}
+                                onClose={onClose}
+                            />
                         )}
                     </motion.div>
                 </AnimatePresence>
@@ -391,31 +506,44 @@ function IdentificationPhase({ assujetti, onNext }: { assujetti: Assujetti, onNe
             <div className="flex-1" />
 
             <button
+                type="button"
                 onClick={onNext}
-                className="w-full py-5 bg-slate-900 text-white rounded-[2rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-xs shadow-xl shadow-slate-900/10 active:scale-95 transition-all"
+                className="w-full py-4 bg-slate-900 text-white rounded-2xl flex items-center justify-center gap-2 font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-[0.98] transition-all min-w-0"
             >
-                Confirmer & Commencer le constat
-                <ArrowRight size={18} />
+                <span className="truncate">Confirmer & commencer le constat</span>
+                <ArrowRight size={16} className="shrink-0" />
             </button>
         </div>
     );
 }
 
-function ConstatPhase({ tv, setTv, radio, setRadio, data, setData, geo, setGeo, onLocate, isLocating, onNext, onBack }: {
-    tv: number,
-    setTv: (v: number) => void,
-    radio: number,
-    setRadio: (v: number) => void,
-    data: any,
-    setData: (d: any) => void,
-    geo: { lat: number, lng: number } | null,
-    setGeo: (g: { lat: number, lng: number } | null) => void,
-    onLocate: () => void,
-    isLocating: boolean,
-    onNext: () => void,
-    onBack: () => void
+function ConstatPhase({ assujetti, tv, setTv, radio, setRadio, data, setData, geo, setGeo, onLocate, isLocating, onNext, onBack }: {
+    assujetti: Assujetti;
+    tv: number;
+    setTv: (v: number) => void;
+    radio: number;
+    setRadio: (v: number) => void;
+    data: any;
+    setData: (d: any) => void;
+    geo: { lat: number; lng: number } | null;
+    setGeo: (g: { lat: number; lng: number } | null) => void;
+    onLocate: () => void;
+    isLocating: boolean;
+    onNext: () => void;
+    onBack: () => void;
 }) {
     const [isManual, setIsManual] = useState(false);
+    const activitesDeclarees = (assujetti.activites as string[] | undefined) ?? [];
+    const labelsDeclarees = activitesDeclarees.map((id) => ACTIVITY_ID_TO_LABEL[id] ?? id);
+    const hasAutreDeclare = activitesDeclarees.includes("autre");
+
+    const handleNext = () => {
+        if (!(data.adresseConstatee ?? "").trim()) {
+            toast.error("L'adresse constatée est obligatoire. Renseignez l'adresse précise avant de continuer.");
+            return;
+        }
+        onNext();
+    };
 
     return (
         <div className="space-y-6 flex flex-col h-full overflow-hidden">
@@ -425,14 +553,31 @@ function ConstatPhase({ tv, setTv, radio, setRadio, data, setData, geo, setGeo, 
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-6 pr-1 scrollbar-hide pb-4">
-                {/* Sector of Activity */}
+                {/* Catégories déclarées par l'assujetti */}
+                <div className="space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 px-1">Catégories déclarées par l&apos;assujetti</p>
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                        {labelsDeclarees.length > 0 ? (
+                            <p className="text-sm font-bold text-slate-700">
+                                {labelsDeclarees.join(", ")}
+                                {hasAutreDeclare && assujetti.precisionAutre && (
+                                    <span className="block mt-1 text-slate-500 font-normal">Autre : {assujetti.precisionAutre}</span>
+                                )}
+                            </p>
+                        ) : (
+                            <p className="text-sm text-slate-400 italic">Aucune catégorie renseignée</p>
+                        )}
+                    </div>
+                </div>
+
+                {/* Secteurs constatés (à mettre à jour) */}
                 <div className="space-y-4">
                     <div className="flex items-center justify-between px-1">
-                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#0d2870] italic">Secteurs d'Activité (Max 3)</p>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#0d2870] italic">Secteurs constatés (max 3)</p>
                         <span className="text-[9px] font-bold text-slate-400 uppercase">{data.secteursActivite.length}/3</span>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                        {["Hôtel", "Restaurant", "Bar", "Lounge Bar", "Paris Sportifs", "Guest House", "Chaîne Télé / Radio", "Autre"].map((sector) => {
+                        {SECTEURS_ORDER.map((sector) => {
                             const isSelected = data.secteursActivite.includes(sector);
                             return (
                                 <button
@@ -515,29 +660,29 @@ function ConstatPhase({ tv, setTv, radio, setRadio, data, setData, geo, setGeo, 
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1.5">
-                                <label className="text-[9px] font-black uppercase text-slate-400 px-1">RCCM</label>
-                                <Input
-                                    value={data.rccm}
-                                    onChange={(e) => setData({ rccm: e.target.value })}
-                                    placeholder="CD/..."
-                                    className="h-12 rounded-2xl bg-slate-50 border-slate-100 font-mono font-bold text-sm uppercase"
-                                />
-                            </div>
-                            <div className="space-y-1.5">
-                                <label className="text-[9px] font-black uppercase text-slate-400 px-1">Représentant</label>
-                                <Input
-                                    value={data.representantLegal}
-                                    onChange={(e) => setData({ representantLegal: e.target.value })}
-                                    placeholder="Nom..."
-                                    className="h-12 rounded-2xl bg-slate-50 border-slate-100 font-bold text-sm uppercase"
-                                />
-                            </div>
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-slate-400 px-1">RCCM</label>
+                            <textarea
+                                value={data.rccm}
+                                onChange={(e) => setData({ rccm: e.target.value })}
+                                placeholder="Ex: CD/KIN/.../RCCM:14-B-1561"
+                                rows={2}
+                                className="w-full min-h-[4rem] rounded-2xl bg-slate-50 border border-slate-100 font-mono font-bold text-sm uppercase px-4 py-3 resize-y outline-none focus:ring-2 focus:ring-[#0d2870]/20"
+                            />
                         </div>
 
                         <div className="space-y-1.5">
-                            <label className="text-[9px] font-black uppercase text-slate-400 px-1">Adresse de Siège</label>
+                            <label className="text-[9px] font-black uppercase text-slate-400 px-1">Représentant légal</label>
+                            <Input
+                                value={data.representantLegal}
+                                onChange={(e) => setData({ representantLegal: e.target.value })}
+                                placeholder="Nom..."
+                                className="h-12 rounded-2xl bg-slate-50 border-slate-100 font-bold text-sm uppercase"
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-slate-400 px-1">Adresse de Siège (déclarée)</label>
                             <Input
                                 value={data.adresseSiege}
                                 onChange={(e) => setData({ adresseSiege: e.target.value })}
@@ -546,16 +691,17 @@ function ConstatPhase({ tv, setTv, radio, setRadio, data, setData, geo, setGeo, 
                             />
                         </div>
 
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black uppercase text-slate-400 px-1">ID National</label>
+                            <Input
+                                value={data.idNat}
+                                onChange={(e) => setData({ idNat: e.target.value })}
+                                placeholder="Ex: 6-83-N 85264 K"
+                                className="w-full h-12 rounded-2xl bg-slate-50 border-slate-100 font-mono font-bold text-sm uppercase"
+                            />
+                        </div>
+
                         <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1.5">
-                                <label className="text-[9px] font-black uppercase text-slate-400 px-1">ID National</label>
-                                <Input
-                                    value={data.idNat}
-                                    onChange={(e) => setData({ idNat: e.target.value })}
-                                    placeholder="Id. Nat."
-                                    className="h-12 rounded-2xl bg-slate-50 border-slate-100 font-mono font-bold text-sm uppercase"
-                                />
-                            </div>
                             <div className="space-y-1.5">
                                 <label className="text-[9px] font-black uppercase text-slate-400 px-1">Catégorie (activité)</label>
                                 <select
@@ -574,6 +720,20 @@ function ConstatPhase({ tv, setTv, radio, setRadio, data, setData, geo, setGeo, 
                                     <option value="autre">Autre</option>
                                 </select>
                             </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[9px] font-black uppercase text-slate-400 px-1">Structure</label>
+                                <select
+                                    value={data.typeStructure}
+                                    onChange={(e) => setData({ typeStructure: e.target.value })}
+                                    className="w-full h-12 rounded-2xl bg-slate-50 border-slate-100 font-bold text-sm uppercase px-4 outline-none focus:ring-2 focus:ring-[#0d2870]/20"
+                                >
+                                    <option value="">—</option>
+                                    <option value="societe">Société</option>
+                                    <option value="etablissement">Établissement</option>
+                                    <option value="asbl">ASBL</option>
+                                    <option value="autre">Autre</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div className="space-y-1.5">
@@ -589,6 +749,38 @@ function ConstatPhase({ tv, setTv, radio, setRadio, data, setData, geo, setGeo, 
                                 <option value="pm">PM</option>
                             </select>
                         </div>
+                    </div>
+                </div>
+
+                <div className="h-px bg-slate-100" />
+
+                {/* Adresse constatée (obligatoire) */}
+                <div className="space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#0d2870] px-1 italic">
+                        Adresse constatée <span className="text-red-500">*</span> (obligatoire)
+                    </p>
+                    <p className="text-[9px] text-slate-500 px-1">Adresse précise constatée sur place (à comparer avec l&apos;adresse déclarée).</p>
+                    <textarea
+                        value={data.adresseConstatee}
+                        onChange={(e) => setData({ adresseConstatee: e.target.value })}
+                        placeholder="N°, Rue, Quartier, Commune..."
+                        rows={2}
+                        className={cn(
+                            "w-full min-h-[4rem] rounded-2xl bg-slate-50 border font-bold text-sm uppercase px-4 py-3 resize-y outline-none focus:ring-2 focus:ring-[#0d2870]/20",
+                            !(data.adresseConstatee ?? "").trim() ? "border-amber-200 bg-amber-50/30" : "border-slate-100"
+                        )}
+                    />
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={onLocate}
+                            disabled={isLocating}
+                            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-black uppercase text-[#0d2870] active:scale-95 flex items-center gap-2"
+                        >
+                            {isLocating ? <Loader2 size={12} className="animate-spin" /> : <Globe size={12} />}
+                            {geo ? "Actualiser GPS" : "Ajouter position GPS"}
+                        </button>
+                        {geo && <span className="text-[9px] text-slate-400">{geo.lat.toFixed(5)}, {geo.lng.toFixed(5)}</span>}
                     </div>
                 </div>
 
@@ -714,17 +906,20 @@ function ConstatPhase({ tv, setTv, radio, setRadio, data, setData, geo, setGeo, 
 
                 <div className="grid grid-cols-2 gap-3">
                     <button
+                        type="button"
                         onClick={onBack}
-                        className="py-5 bg-slate-50 text-slate-400 rounded-[2rem] flex items-center justify-center font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all"
+                        className="py-4 bg-slate-50 text-slate-500 rounded-2xl flex items-center justify-center gap-2 font-black uppercase tracking-widest text-[10px] active:scale-[0.98] border border-slate-200 min-w-0"
                     >
-                        Retour
+                        <ChevronLeft size={16} className="shrink-0" />
+                        <span className="truncate">Retour</span>
                     </button>
                     <button
-                        onClick={onNext}
-                        className="py-5 bg-[#0d2870] text-white rounded-[2rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-xs shadow-xl shadow-[#0d2870]/20 active:scale-95 transition-all"
+                        type="button"
+                        onClick={handleNext}
+                        className="py-4 bg-[#0d2870] text-white rounded-2xl flex items-center justify-center gap-2 font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-[0.98] min-w-0"
                     >
-                        Analyser
-                        <Calculator size={18} />
+                        <span className="truncate">Analyser</span>
+                        <Calculator size={16} className="shrink-0" />
                     </button>
                 </div>
             </div>
@@ -744,6 +939,8 @@ function AnalysePhase({ assujetti, tvC, radioC, constatData, montantPrincipal, m
         { label: "ID National", constat: constatData.idNat, declare: assujetti.idNat || "" },
         { label: "Représentant légal", constat: constatData.representantLegal, declare: assujetti.representantLegal || "" },
         { label: "Adresse siège", constat: constatData.adresseSiege, declare: assujetti.adresseSiege || "" },
+        { label: "Adresse constatée", constat: constatData.adresseConstatee, declare: "" },
+        { label: "Structure", constat: constatData.typeStructure, declare: assujetti.typeStructure || "" },
         { label: "Catégorie (activité)", constat: constatData.typeActivite, declare: assujetti.typeActivite || "" },
         { label: "Sous-type PM", constat: constatData.sousTypePm, declare: assujetti.sousTypePm || "" },
     ];
@@ -857,47 +1054,45 @@ function AnalysePhase({ assujetti, tvC, radioC, constatData, montantPrincipal, m
 
                 {/* Financial Summary or Conformity */}
                 {isEcart ? (
-                    <div className="bg-[#0b1b3d] text-white rounded-[3rem] p-7 space-y-6 shadow-2xl shadow-[#0b1b3d]/30 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-8 opacity-5">
-                            <AlertTriangle size={120} />
+                    <div className="bg-[#0b1b3d] text-white rounded-3xl p-6 space-y-5 shadow-xl border border-[#0d2870]/20 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+                            <AlertTriangle size={100} />
                         </div>
 
-                        <div className="flex items-center justify-between relative z-10">
-                            <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                    <h4 className="text-[11px] font-black uppercase tracking-widest text-red-500">Régularisation requise</h4>
+                        <div className="flex flex-wrap items-center justify-between gap-3 relative z-10">
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+                                    <h4 className="text-xs font-black uppercase tracking-widest text-red-400 truncate">Régularisation requise</h4>
                                 </div>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Écarts constatés lors de la mission</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-0.5">Écarts constatés lors de la mission</p>
                             </div>
-                            <div className="text-right">
-                                <p className="text-[8px] font-black uppercase text-slate-400 italic">Pénalité</p>
-                                <p className="text-xl font-black text-red-400">+50%</p>
+                            <div className="text-right flex-shrink-0">
+                                <p className="text-[9px] font-black uppercase text-slate-400">Pénalité</p>
+                                <p className="text-lg font-black text-red-400">+50%</p>
                             </div>
                         </div>
 
                         <div className="space-y-4 relative z-10">
-                            <div className="bg-white/5 rounded-3xl p-5 space-y-3">
-                                <div className="flex justify-between items-center text-[10px] font-black uppercase">
-                                    <span className="text-slate-400">Droits Éludés</span>
-                                    <span className="text-white">{montantPrincipal.toLocaleString()}$</span>
+                            <div className="bg-white/10 rounded-2xl p-4 space-y-3">
+                                <div className="flex justify-between items-center gap-2 text-[11px] font-black uppercase">
+                                    <span className="text-slate-300 shrink-0">Droits éludés (principal)</span>
+                                    <span className="text-white tabular-nums">{Number(montantPrincipal).toFixed(2)} $</span>
                                 </div>
-                                <div className="flex justify-between items-center text-[10px] font-black uppercase">
-                                    <span className="text-slate-400">Amende Transactionnelle</span>
-                                    <span className="text-red-400">{montantPenalite.toLocaleString()}$</span>
+                                <div className="flex justify-between items-center gap-2 text-[11px] font-black uppercase">
+                                    <span className="text-slate-300 shrink-0">Amende (pénalités)</span>
+                                    <span className="text-red-300 tabular-nums">{Number(montantPenalite).toFixed(2)} $</span>
                                 </div>
                             </div>
 
-                            <div className="px-5 flex justify-between items-end">
-                                <div className="space-y-0.5">
-                                    <p className="text-[9px] font-black uppercase text-indigo-300 tracking-widest">Total à payer</p>
-                                    <p className="text-[8px] font-bold text-slate-400 italic">Montant toutes taxes incluses</p>
+                            <div className="flex flex-wrap justify-between items-end gap-3 pt-2">
+                                <div className="min-w-0">
+                                    <p className="text-[10px] font-black uppercase text-indigo-300 tracking-widest">Total à payer</p>
+                                    <p className="text-[9px] font-bold text-slate-400">Montant TTC</p>
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-4xl font-black text-white italic tracking-tighter underline underline-offset-8 decoration-indigo-500/50">
-                                        {montantTotal.toLocaleString()}$
-                                    </p>
-                                </div>
+                                <p className="text-2xl sm:text-3xl font-black text-white tabular-nums shrink-0">
+                                    {Number(montantTotal).toFixed(2)} $
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -914,48 +1109,52 @@ function AnalysePhase({ assujetti, tvC, radioC, constatData, montantPrincipal, m
                 )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4 shrink-0 mt-4">
+            <div className="grid grid-cols-2 gap-3 shrink-0 mt-4">
                 <button
+                    type="button"
                     onClick={onBack}
-                    className="py-5 bg-slate-50 text-slate-400 rounded-[2rem] flex items-center justify-center font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all border border-slate-100"
+                    className="py-4 bg-slate-50 text-slate-500 rounded-2xl flex items-center justify-center gap-2 font-black uppercase tracking-widest text-[10px] active:scale-[0.98] transition-all border border-slate-200 min-w-0"
                 >
-                    Retour
+                    <ChevronLeft size={16} className="shrink-0" />
+                    <span className="truncate">Retour</span>
                 </button>
                 <button
+                    type="button"
                     onClick={onNext}
-                    className="py-5 bg-[#0d2870] text-white rounded-[2rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-xs shadow-xl shadow-[#0d2870]/20 active:scale-95 transition-all"
+                    className="py-4 bg-[#0d2870] text-white rounded-2xl flex items-center justify-center gap-2 font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-[0.98] transition-all min-w-0"
                 >
-                    {isEcart ? "Procéder au paiement" : "Finaliser le contrôle"}
-                    <CreditCard size={18} />
+                    <span className="truncate">{isEcart ? "Procéder au paiement" : "Finaliser le contrôle"}</span>
+                    <CreditCard size={16} className="shrink-0" />
                 </button>
             </div>
         </div>
     );
 }
 
-function PaiementPhase({ montant, onNext, onBack }: { montant: number, onNext: () => void, onBack: () => void }) {
+const PAIEMENT_METHODS = [
+    { id: "mtn", label: "MTN MoMo", icon: Smartphone, color: "bg-yellow-400 text-slate-900" },
+    { id: "airtel", label: "Airtel Money", icon: Smartphone, color: "bg-red-600 text-white" },
+    { id: "orange", label: "Orange Money", icon: Smartphone, color: "bg-orange-500 text-white" },
+    { id: "bank", label: "Virement / QR", icon: Globe, color: "bg-slate-900 text-white" },
+] as const;
+
+function PaiementPhase({ montant, onNext, onBack }: { montant: number, onNext: (paymentMethod: string) => void, onBack: () => void }) {
     const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
     const [status, setStatus] = useState<"idle" | "pushing" | "verifying" | "paid">("idle");
 
     const handlePay = () => {
         if (!selectedMethod) return;
+        const label = PAIEMENT_METHODS.find((m) => m.id === selectedMethod)?.label ?? selectedMethod;
         setStatus("pushing");
         setTimeout(() => {
             setStatus("verifying");
             setTimeout(() => {
                 setStatus("paid");
                 toast.success("Paiement confirmé par l'assujetti");
-                setTimeout(onNext, 1500);
+                setTimeout(() => onNext(label), 1500);
             }, 3000);
         }, 2000);
     };
-
-    const methods = [
-        { id: "mtn", label: "MTN MoMo", icon: Smartphone, color: "bg-yellow-400 text-slate-900" },
-        { id: "airtel", label: "Airtel Money", icon: Smartphone, color: "bg-red-600 text-white" },
-        { id: "orange", label: "Orange Money", icon: Smartphone, color: "bg-orange-500 text-white" },
-        { id: "bank", label: "Virement / QR", icon: Globe, color: "bg-slate-900 text-white" },
-    ];
 
     if (status !== "idle") {
         return (
@@ -1001,7 +1200,7 @@ function PaiementPhase({ montant, onNext, onBack }: { montant: number, onNext: (
             <div className="space-y-3">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Mode de règlement</p>
                 <div className="grid grid-cols-2 gap-3">
-                    {methods.map((m) => (
+                    {PAIEMENT_METHODS.map((m) => (
                         <button
                             key={m.id}
                             onClick={() => setSelectedMethod(m.id)}
@@ -1122,69 +1321,222 @@ function PVPhase({ assujetti, onNext, onBack, isSaving }: { assujetti: Assujetti
 
             <div className="shrink-0 pt-4 space-y-3">
                 <button
+                    type="button"
                     disabled={!agentSigned || !assujettiSigned}
-                    className="w-full py-5 bg-white border-2 border-[#0d2870] text-[#0d2870] rounded-[2rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all disabled:opacity-50"
+                    className="w-full py-4 bg-white border-2 border-[#0d2870] text-[#0d2870] rounded-2xl flex items-center justify-center gap-2 font-black uppercase tracking-widest text-[10px] active:scale-[0.98] transition-all disabled:opacity-50 min-w-0"
                 >
-                    <Download size={18} />
-                    Télécharger le PV (PDF)
+                    <Download size={16} className="shrink-0" />
+                    <span className="truncate">Télécharger le PV (PDF)</span>
                 </button>
                 <button
+                    type="button"
                     disabled={!agentSigned || !assujettiSigned || isSaving}
                     onClick={onNext}
-                    className="w-full py-5 bg-[#0d2870] text-white rounded-[2rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-xs shadow-xl shadow-[#0d2870]/20 active:scale-95 transition-all disabled:opacity-50"
+                    className="w-full py-4 bg-[#0d2870] text-white rounded-2xl flex items-center justify-center gap-2 font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-[0.98] transition-all disabled:opacity-50 min-w-0"
                 >
-                    {isSaving ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
-                    Finaliser la mission
+                    {isSaving ? <Loader2 size={16} className="animate-spin shrink-0" /> : <CheckCircle2 size={16} className="shrink-0" />}
+                    <span className="truncate">Finaliser la mission</span>
                 </button>
             </div>
         </div>
     );
 }
 
-function SuccessPhase({ onClose }: { onClose: () => void }) {
+/** Génère le HTML du ticket pour impression directe (dialogue d’impression système → imprimante par défaut ou POS). */
+function ticketToPrintHtml(t: ControlTicketData): string {
+    const dateStr = t.dateOperation.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const timeStr = t.dateOperation.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const year = t.exercice;
+    return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Ticket contrôle ${t.ticketId}</title>
+<style>
+@page { size: 80mm auto; margin: 4mm; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, sans-serif; width: 72mm; max-width: 72mm; margin: 0 auto; padding: 8px; font-size: 11px; }
+h1 { font-size: 12px; text-align: center; color: #0d2870; margin: 0 0 4px; font-weight: 800; }
+h2 { font-size: 9px; color: #64748b; margin: 0 0 8px; text-align: center; font-weight: 700; }
+.line { margin: 1px 0; }
+.bold { font-weight: 800; }
+.small { font-size: 10px; color: #475569; }
+hr { border: none; border-top: 1px dashed #cbd5e1; margin: 6px 0; }
+</style>
+</head><body>
+<h1>RTNC - REDEVANCE AUDIOVISUELLE</h1>
+<h2>REDEVANCE ANNÉE: ${year}</h2>
+<hr>
+<p class="line small">DATE: ${dateStr}  ${timeStr}</p>
+<p class="line">Ticket: ${t.ticketId}</p>
+<hr>
+<p class="line bold">ASSUJETTI</p>
+<p class="line">${t.assujettiName}</p>
+${t.nif ? `<p class="line small">NIF: ${t.nif}</p>` : ""}
+${t.identifiantFiscal ? `<p class="line small">ID Fiscal: ${t.identifiantFiscal}</p>` : ""}
+${t.address ? `<p class="line small">${t.address}</p>` : ""}
+<hr>
+<p class="line bold">CONSTAT</p>
+<p class="line">TV: ${t.tvDeclared} décl. / ${t.tvConstate} const.</p>
+<p class="line">Radio: ${t.radioDeclared} décl. / ${t.radioConstate} const.</p>
+${t.sectors?.length ? `<p class="line small">Secteurs: ${t.sectors.join(", ")}</p>` : ""}
+<hr>
+<p class="line bold">PAIEMENT</p>
+<p class="line">Payé par: ${t.paymentMethod}</p>
+<p class="line">Principal: $${Number(t.montantPrincipal).toFixed(2)}</p>
+<p class="line">Pénalités: $${Number(t.montantPenalite).toFixed(2)}</p>
+<p class="line bold">TOTAL: $${Number(t.montantTotal).toFixed(2)}</p>
+${t.agentName ? `<p class="line small">Agent: ${t.agentName}</p>` : ""}
+<hr>
+<p class="line small" style="text-align:center">Merci. Opération enregistrée.</p>
+</body></html>`;
+}
+
+function SuccessPhase({ ticket, onClose }: { ticket: ControlTicketData | null; onClose: () => void }) {
+    const [showTicketModal, setShowTicketModal] = useState(false);
+
+    const handlePrint = () => {
+        if (!ticket) return;
+        const html = ticketToPrintHtml(ticket);
+        const w = window.open("", "_blank", "noopener,noreferrer");
+        if (!w) {
+            toast.error("Autorisez les pop-ups pour imprimer.");
+            return;
+        }
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        // Dialogue d’impression système → imprimante par défaut (ex. POS branché)
+        setTimeout(() => {
+            try {
+                w.print();
+            } catch (_) {}
+            setTimeout(() => w.close(), 800);
+        }, 350);
+    };
+
     return (
-        <div className="flex flex-col items-center justify-center h-full text-center space-y-8">
-            <div className="relative">
-                <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="w-32 h-32 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-2xl shadow-emerald-500/40"
-                >
-                    <CheckCircle2 size={64} />
-                </motion.div>
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: [0, 1, 0], scale: [1, 1.5, 2] }}
-                    transition={{ duration: 1.5, repeat: Infinity }}
-                    className="absolute inset-0 rounded-full border-4 border-emerald-500"
-                />
-            </div>
-            <div className="space-y-4">
-                <div className="space-y-2">
-                    <h3 className="text-3xl font-black uppercase tracking-tight leading-tight">Mission Terminée</h3>
-                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest max-w-[250px] mx-auto">
-                        Le contrôle a été enregistré avec succès et le dossier de l'assujetti a été mis à jour.
-                    </p>
+        <>
+            <div className="flex flex-col items-center justify-center h-full text-center space-y-8">
+                <div className="relative">
+                    <motion.div
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        className="w-32 h-32 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-2xl shadow-emerald-500/40"
+                    >
+                        <CheckCircle2 size={64} />
+                    </motion.div>
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: [0, 1, 0], scale: [1, 1.5, 2] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                        className="absolute inset-0 rounded-full border-4 border-emerald-500"
+                    />
                 </div>
-                <div className="grid grid-cols-2 gap-3 max-w-[300px] mx-auto pt-4">
-                    <div className="p-3 bg-slate-50 rounded-2xl">
-                        <p className="text-[8px] font-black text-slate-400 uppercase">PV Généré</p>
-                        <p className="text-xs font-black text-slate-900">OUI</p>
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <h3 className="text-3xl font-black uppercase tracking-tight leading-tight">Mission Terminée</h3>
+                        <p className="text-sm font-bold text-slate-400 uppercase tracking-widest max-w-[250px] mx-auto">
+                            Le contrôle a été enregistré avec succès et le dossier de l'assujetti a été mis à jour.
+                        </p>
                     </div>
-                    <div className="p-3 bg-slate-50 rounded-2xl">
-                        <p className="text-[8px] font-black text-slate-400 uppercase">Régularisé</p>
-                        <p className="text-xs font-black text-emerald-600">PAYÉ</p>
+                    <div className="grid grid-cols-2 gap-3 max-w-[300px] mx-auto pt-4">
+                        <div className="p-3 bg-slate-50 rounded-2xl">
+                            <p className="text-[8px] font-black text-slate-400 uppercase">PV Généré</p>
+                            <p className="text-xs font-black text-slate-900">OUI</p>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-2xl">
+                            <p className="text-[8px] font-black text-slate-400 uppercase">Régularisé</p>
+                            <p className="text-xs font-black text-emerald-600">PAYÉ</p>
+                        </div>
                     </div>
+                </div>
+
+                <div className="w-full pt-4 space-y-3 max-w-[320px]">
+                    {ticket && (
+                        <button
+                            type="button"
+                            onClick={() => setShowTicketModal(true)}
+                            className="w-full py-4 bg-[#0d2870] text-white rounded-[2rem] font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                        >
+                            <Receipt size={18} />
+                            Voir le ticket
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-widest text-xs shadow-xl shadow-slate-900/10 active:scale-95 transition-all"
+                    >
+                        Retour au Dashboard
+                    </button>
                 </div>
             </div>
 
-            <div className="w-full pt-8">
-                <button
-                    onClick={onClose}
-                    className="w-full py-5 bg-slate-900 text-white rounded-[2rem] font-black uppercase tracking-widest text-xs shadow-xl shadow-slate-900/10 active:scale-95 transition-all"
-                >
-                    Retour au Dashboard
-                </button>
+            {showTicketModal && ticket && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50" onClick={() => setShowTicketModal(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-[340px] w-full max-h-[90vh] overflow-auto border-2 border-slate-100" onClick={(e) => e.stopPropagation()}>
+                        <ControlTicketReceiptWeb ticket={ticket} />
+                        <div className="p-4 border-t border-slate-100 flex flex-wrap items-center justify-center gap-3">
+                            <button
+                                type="button"
+                                onClick={handlePrint}
+                                className="px-4 py-3 rounded-2xl border-2 border-[#0d2870] text-[#0d2870] font-black uppercase tracking-widest text-[10px] flex items-center gap-2 shrink-0"
+                            >
+                                <Printer size={16} className="shrink-0" />
+                                Imprimer (imprimante par défaut)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowTicketModal(false)}
+                                className="px-4 py-3 rounded-2xl bg-slate-100 text-slate-700 font-black uppercase tracking-widest text-[10px] shrink-0"
+                            >
+                                Fermer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
+    );
+}
+
+function ControlTicketReceiptWeb({ ticket }: { ticket: ControlTicketData }) {
+    const dateStr = ticket.dateOperation.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const timeStr = ticket.dateOperation.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const year = ticket.exercice;
+    const line = (text: string, bold?: boolean, small?: boolean) => (
+        <p className={cn("mb-0.5", bold ? "font-black text-slate-900" : "font-semibold text-slate-700", small && "text-[11px] text-slate-500")}>{text}</p>
+    );
+    return (
+        <div className="p-4">
+            <div className="text-center py-3 border-b border-slate-100">
+                <p className="text-sm font-black uppercase tracking-wide text-[#0d2870]">CONTROL TERRAIN</p>
+                <p className="text-[10px] font-semibold text-slate-500 uppercase">Ticket de contrôle</p>
+            </div>
+            <div className="py-3 space-y-1 text-sm">
+                {line("RTNC - REDEVANCE AUDIOVISUELLE")}
+                {line(`REDEVANCE ANNÉE: ${year}`, true)}
+                {line("DATE (très important)", false, true)}
+                {line(`${dateStr}  ${timeStr}`, true)}
+                {line(`Ticket: ${ticket.ticketId}`, false, true)}
+                <div className="border-t border-dashed border-slate-200 my-2" />
+                {line("--- ASSUJETTI ---")}
+                {line(ticket.assujettiName, true)}
+                {ticket.nif && line(`NIF: ${ticket.nif}`, false, true)}
+                {ticket.identifiantFiscal && line(`ID Fiscal: ${ticket.identifiantFiscal}`, false, true)}
+                {ticket.address && line(ticket.address, false, true)}
+                <div className="border-t border-dashed border-slate-200 my-2" />
+                {line("--- CONSTAT ---")}
+                {line(`TV: ${ticket.tvDeclared} décl. / ${ticket.tvConstate} const.`)}
+                {line(`Radio: ${ticket.radioDeclared} décl. / ${ticket.radioConstate} const.`)}
+                {ticket.sectors?.length ? line(`Secteurs: ${ticket.sectors.join(", ")}`, false, true) : null}
+                <div className="border-t border-dashed border-slate-200 my-2" />
+                {line("--- PAIEMENT ---")}
+                {line(`Payé par: ${ticket.paymentMethod}`, true)}
+                {line(`Principal: $${Number(ticket.montantPrincipal).toFixed(2)}`)}
+                {line(`Pénalités: $${Number(ticket.montantPenalite).toFixed(2)}`)}
+                {line(`TOTAL: $${Number(ticket.montantTotal).toFixed(2)}`, true)}
+                {ticket.agentName ? line(`Opération effectuée par: ${ticket.agentName}`, false, true) : null}
+                <div className="border-t border-dashed border-slate-200 my-2" />
+                {line("Merci. Opération enregistrée.", false, true)}
             </div>
         </div>
     );

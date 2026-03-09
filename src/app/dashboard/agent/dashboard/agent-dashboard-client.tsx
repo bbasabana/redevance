@@ -25,7 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { MobileBottomNav, AgentTab } from "@/components/agent/MobileBottomNav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { searchAssujettiAction } from "../actions";
+import { searchAssujettiAction, getAssujettiDetailsAction, calculateControlAction } from "../actions";
 import { toast } from "sonner";
 import { clearSession } from "@/lib/auth/session";
 import { useRouter } from "next/navigation";
@@ -96,8 +96,14 @@ export default function AgentDashboardClient({ agentId, communeName }: AgentDash
                                 rccm: activeControlAssujetti.rccm,
                                 representantLegal: activeControlAssujetti.representantLegal,
                                 adresseSiege: activeControlAssujetti.adresseSiege,
-                                nbTvDeclare: activeControlAssujetti.nbTvDeclare || 0,
-                                nbRadioDeclare: activeControlAssujetti.nbRadioDeclare || 0,
+                                idNat: activeControlAssujetti.idNat,
+                                typeActivite: activeControlAssujetti.typeActivite,
+                                sousTypePm: activeControlAssujetti.sousTypePm,
+                                typeStructure: activeControlAssujetti.typeStructure,
+                                activites: activeControlAssujetti.activites,
+                                precisionAutre: activeControlAssujetti.precisionAutre,
+                                nbTvDeclare: activeControlAssujetti.nbTvDeclare ?? 0,
+                                nbRadioDeclare: activeControlAssujetti.nbRadioDeclare ?? 0,
                             }}
                             onClose={() => setActiveControlAssujetti(null)}
                         />
@@ -284,6 +290,7 @@ function SearchTab({ onSelectAssujetti }: { onSelectAssujetti: (a: any) => void 
     const [query, setQuery] = useState("");
     const [results, setResults] = useState<any[]>([]);
     const [isSearching, setIsSearching] = useState(false);
+    const [loadingId, setLoadingId] = useState<string | null>(null);
     const [isPending, startTransition] = useTransition();
 
     const handleSearch = (e?: React.FormEvent) => {
@@ -303,6 +310,31 @@ function SearchTab({ onSelectAssujetti }: { onSelectAssujetti: (a: any) => void 
             }
             setIsSearching(false);
         });
+    };
+
+    const handleSelectForControl = async (r: { id: string }) => {
+        setLoadingId(r.id);
+        try {
+            const [detailRes, controlRes] = await Promise.all([
+                getAssujettiDetailsAction(r.id),
+                calculateControlAction(r.id),
+            ]);
+            if (!detailRes.success || !detailRes.data) {
+                toast.error(detailRes.success === false ? detailRes.error : "Assujetti introuvable");
+                return;
+            }
+            const full = detailRes.data as any;
+            const controlData = controlRes.success && controlRes.data ? controlRes.data : {};
+            onSelectAssujetti({
+                ...full,
+                nbTvDeclare: controlData.nbTvDeclare ?? 0,
+                nbRadioDeclare: controlData.nbRadioDeclare ?? 0,
+            });
+        } catch (e) {
+            toast.error("Erreur lors du chargement des détails");
+        } finally {
+            setLoadingId(null);
+        }
     };
 
     return (
@@ -345,11 +377,12 @@ function SearchTab({ onSelectAssujetti }: { onSelectAssujetti: (a: any) => void 
                                     <p className="text-[10px] font-mono font-bold text-[#0d2870] uppercase">{r.identifiantFiscal}</p>
                                 </div>
                                 <button
-                                    onClick={() => onSelectAssujetti(r)}
-                                    className="w-10 h-10 rounded-xl bg-[#0d2870] flex items-center justify-center text-white shadow-lg shadow-[#0d2870]/20 active:scale-90 transition-all"
-                                    title="Confirmer & Authentifier"
+                                    onClick={() => handleSelectForControl(r)}
+                                    disabled={loadingId === r.id}
+                                    className="w-10 h-10 rounded-xl bg-[#0d2870] flex items-center justify-center text-white shadow-lg shadow-[#0d2870]/20 active:scale-90 transition-all disabled:opacity-50"
+                                    title="Contrôler cet assujetti"
                                 >
-                                    <ShieldCheck size={18} />
+                                    {loadingId === r.id ? <Loader2 size={18} className="animate-spin" /> : <ShieldCheck size={18} />}
                                 </button>
                             </div>
                         ))}

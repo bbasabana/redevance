@@ -104,6 +104,8 @@ const ID_FIELDS = [
   "idNat",
   "representantLegal",
   "adresseSiege",
+  "adresseConstatee",
+  "typeStructure",
   "typeActivite",
   "sousTypePm",
 ] as const;
@@ -215,7 +217,9 @@ export async function approveControlAction(controleId: string): Promise<
     if (constat.rccm != null) updateAssujetti.rccm = constat.rccm;
     if (constat.idNat != null) updateAssujetti.idNat = constat.idNat;
     if (constat.representantLegal != null) updateAssujetti.representantLegal = constat.representantLegal;
-    if (constat.adresseSiege != null && constat.adresseSiege !== "") updateAssujetti.adresseSiege = constat.adresseSiege;
+    const adresse = (constat.adresseConstatee ?? constat.adresseSiege)?.trim();
+    if (adresse) updateAssujetti.adresseSiege = adresse;
+    if (constat.typeStructure != null) updateAssujetti.typeStructure = constat.typeStructure;
     if (constat.typeActivite != null) updateAssujetti.typeActivite = constat.typeActivite;
     if (constat.sousTypePm != null) updateAssujetti.sousTypePm = constat.sousTypePm;
 
