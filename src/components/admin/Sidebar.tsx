@@ -39,13 +39,13 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 const adminItems = [
     { title: "Tableau de Bord", href: "/admin/dashboard", iconName: "dashboard" },
+    { title: "Assujettis", href: "/admin/assujettis", iconName: "users" },
     { title: "Contrôles à valider", href: "/admin/controles-a-valider", iconName: "declarations" },
-    { title: "Utilisateurs", href: "/admin/utilisateurs", iconName: "users" },
+    { title: "Rapports Agents", href: "/admin/rapports/agents", iconName: "reports" },
     { title: "Zones & Communes", href: "/admin/zones-communes", iconName: "zones" },
     { title: "Tarifs", href: "/admin/tarifs", iconName: "tarifs" },
     { title: "Périodes", href: "/admin/periodes", iconName: "periodes" },
     { title: "Audit Logs", href: "/admin/audit", iconName: "audit" },
-    { title: "Paramètres Globaux", href: "/admin/parametres", iconName: "settings" },
 ];
 
 export function Sidebar() {
