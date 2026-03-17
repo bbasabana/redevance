@@ -29,6 +29,11 @@ export async function middleware(request: NextRequest) {
     const { nextUrl } = request;
     const pathname = nextUrl.pathname;
 
+    // ── Custom Access URLs (for Admin) ────────────────────────────────────────
+    if (pathname === "/xredvance/in/access" || pathname === "/xredevance/in/access") {
+        return NextResponse.redirect(new URL("/admin/login", request.url));
+    }
+
     // ── API mobile : CORS uniquement, pas de cookies (auth via Authorization: Bearer)
     if (pathname.startsWith("/api/mobile")) {
         if (request.method === "OPTIONS") {
