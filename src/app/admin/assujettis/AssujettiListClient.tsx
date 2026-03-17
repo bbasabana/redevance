@@ -14,7 +14,13 @@ import {
     DollarSign,
     MapPin,
     Calendar,
-    ArrowLeft
+    ArrowLeft,
+    Monitor,
+    Radio,
+    FileText,
+    Receipt,
+    Wallet,
+    Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -205,11 +211,11 @@ function StatusBadge({ totalPaye, totalDu, statut }: { totalPaye: number, totalD
             </span>
         );
     }
-    if (totalPaye > 0) {
+    if (totalPaye > 0 || totalDu > 0) {
         return (
             <span className="px-2 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold uppercase flex items-center gap-1.5 w-fit">
                 <Clock className="w-3 h-3" />
-                Partiel
+                {totalPaye > 0 ? "Partiel" : "Redevable"}
             </span>
         );
     }
@@ -222,134 +228,282 @@ function StatusBadge({ totalPaye, totalDu, statut }: { totalPaye: number, totalD
 }
 
 function AssujettiDetailView({ data, onBack }: { data: any, onBack: () => void }) {
-    const { assujetti, paiements: history, notes } = data;
+    const { assujetti, paiements: history, notes, declarations } = data;
+
+    const totalDue = notes.reduce((acc: number, curr: any) => acc + Number(curr.montantTotalDu), 0);
+    const totalPaid = history.reduce((acc: number, curr: any) => acc + Number(curr.montant), 0);
+    const balance = totalDue - totalPaid;
 
     return (
         <motion.div 
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="space-y-6"
+            className="space-y-6 pb-12"
         >
-            <Button variant="ghost" onClick={onBack} className="gap-2 mb-2 p-0 hover:bg-transparent text-slate-500">
-                <ArrowLeft className="w-4 h-4" />
-                Retour à la liste
-            </Button>
+            <div className="flex items-center justify-between">
+                <Button variant="ghost" onClick={onBack} className="gap-2 p-0 hover:bg-transparent text-slate-500 font-bold uppercase tracking-widest text-[10px]">
+                    <ArrowLeft className="w-4 h-4" />
+                    Retour à la liste
+                </Button>
+                <div className="flex items-center gap-3">
+                    <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 font-bold uppercase text-[10px] tracking-widest">Générer Certificat</Button>
+                    <Button variant="outline" size="sm" className="font-bold uppercase text-[10px] tracking-widest">Imprimer Relevé</Button>
+                </div>
+            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Info Column */}
-                <div className="lg:col-span-1 space-y-6">
-                    <Card className="shadow-sm border-slate-200">
-                        <CardHeader className="bg-slate-50 border-b border-slate-100">
-                            <CardTitle className="text-sm font-bold uppercase tracking-wider h-4 flex items-center">Identification</CardTitle>
+            {/* Powerful Recap Header */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <RecapCard 
+                    title="Montant Total Taxé" 
+                    value={`${totalDue.toLocaleString()} $`} 
+                    icon={<Receipt className="w-5 h-5" />} 
+                    color="text-indigo-600"
+                    bgColor="bg-indigo-50"
+                />
+                <RecapCard 
+                    title="Montant Total Payé" 
+                    value={`${totalPaid.toLocaleString()} $`} 
+                    icon={<Wallet className="w-5 h-5" />} 
+                    color="text-emerald-600"
+                    bgColor="bg-emerald-50"
+                />
+                <RecapCard 
+                    title="Reste à Payer" 
+                    value={`${balance.toLocaleString()} $`} 
+                    icon={<AlertCircle className="w-5 h-5" />} 
+                    color={balance > 0 ? "text-rose-600" : "text-emerald-600"}
+                    bgColor={balance > 0 ? "bg-rose-50" : "bg-emerald-50"}
+                />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Profile Section */}
+                <div className="lg:col-span-4 space-y-6">
+                    <Card className="shadow-sm border-slate-200 rounded-2xl overflow-hidden">
+                        <CardHeader className="bg-slate-50/80 border-b border-slate-100 py-4">
+                            <CardTitle className="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                                <Info className="w-4 h-4" />
+                                Profil Assujetti
+                            </CardTitle>
                         </CardHeader>
-                        <CardContent className="p-6 space-y-4">
+                        <CardContent className="p-6 space-y-5">
                             <DetailRow label="ID Fiscal" value={assujetti.identifiantFiscal} isMono />
-                            <DetailRow label="Raison Sociale" value={assujetti.nomRaisonSociale} />
-                            <DetailRow label="NIF" value={assujetti.nif} isMono />
-                            <DetailRow label="RCCM" value={assujetti.rccm} isMono />
+                            <DetailRow label="Nom / Raison Sociale" value={assujetti.nomRaisonSociale} className="text-lg font-black text-slate-900" />
+                            <div className="grid grid-cols-2 gap-4">
+                                <DetailRow label="NIF" value={assujetti.nif} isMono />
+                                <DetailRow label="RCCM" value={assujetti.rccm} isMono />
+                            </div>
+                            <DetailRow label="Type" value={assujetti.typePersonne === 'pp' ? 'Particulier' : 'Entreprise'} />
                             <DetailRow label="Représentant" value={assujetti.representantLegal} />
                             <DetailRow label="Adresse" value={assujetti.adresseSiege} />
-                            <DetailRow label="Téléphone" value={assujetti.telephonePrincipal} />
-                            <DetailRow label="Email" value={assujetti.email} />
+                            <DetailRow label="Contact" value={`${assujetti.telephonePrincipal || ''} ${assujetti.email ? '· ' + assujetti.email : ''}`} />
                         </CardContent>
+                    </Card>
+
+                    {/* Quick Stats Column */}
+                    <Card className="shadow-sm border-slate-200 rounded-2xl bg-slate-900 text-white p-6">
+                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">Statut de Conformité</h4>
+                        <div className="flex items-center gap-4 mb-6">
+                            <div className={cn(
+                                "w-12 h-12 rounded-full flex items-center justify-center text-xl font-black",
+                                balance <= 0 ? "bg-emerald-500" : "bg-amber-500"
+                            )}>
+                                {balance <= 0 ? "A" : "B"}
+                            </div>
+                            <div>
+                                <p className="font-bold text-lg">{balance <= 0 ? "En Règle" : "Partiellement Mis à Jour"}</p>
+                                <p className="text-xs text-slate-400">Dernière mise à jour : {new Date().toLocaleDateString()}</p>
+                            </div>
+                        </div>
+                        <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden mb-2">
+                            <div 
+                                className="bg-emerald-500 h-full transition-all" 
+                                style={{ width: `${Math.min((totalPaid / (totalDue || 1)) * 100, 100)}%` }} 
+                            />
+                        </div>
+                        <p className="text-[10px] font-bold text-slate-400 text-right uppercase tracking-tighter">
+                           Progression Paiement : {((totalPaid / (totalDue || 1)) * 100).toFixed(0)}%
+                        </p>
                     </Card>
                 </div>
 
-                {/* Financial Column */}
-                <div className="lg:col-span-2 space-y-6">
-                    <Card className="shadow-sm border-slate-200">
-                        <CardHeader className="bg-slate-50 border-b border-slate-100 flex flex-row items-center justify-between">
-                            <CardTitle className="text-sm font-bold uppercase tracking-wider h-4 flex items-center">Historique de Paiement</CardTitle>
-                            <DollarSign className="w-4 h-4 text-emerald-600" />
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            {history.length === 0 ? (
-                                <div className="p-12 text-center text-slate-400">
-                                    <p>Aucun paiement enregistré pour cet assujetti.</p>
+                {/* Main Content Sections */}
+                <div className="lg:col-span-8 space-y-8">
+                    
+                    {/* Declarations (Powerful detail) */}
+                    <section className="space-y-4">
+                        <div className="flex items-center justify-between px-1">
+                            <h3 className="text-sm font-black uppercase text-slate-900 tracking-widest flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-indigo-600" />
+                                Historique des Déclarations
+                            </h3>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{declarations.length} total</span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4">
+                            {declarations.map((d: any) => (
+                                <Card key={d.id} className="border-slate-200 shadow-sm overflow-hidden hover:border-indigo-200 transition-colors">
+                                    <div className="bg-slate-50/50 px-6 py-3 border-b border-slate-100 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-xs font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-100">Ex. {d.exercice}</span>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(d.dateDeclaration).toLocaleDateString()}</span>
+                                        </div>
+                                        <StatusBadgeDetailed status={d.statut} />
+                                    </div>
+                                    <CardContent className="p-0">
+                                        <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-slate-100">
+                                            {d.lignes.map((l: any) => (
+                                                <div key={l.id} className="p-4 flex flex-col items-center justify-center text-center">
+                                                    {l.categorieAppareil.toLowerCase().includes('tv') ? <Monitor className="w-4 h-4 text-slate-400 mb-1" /> : <Radio className="w-4 h-4 text-slate-400 mb-1" />}
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1">{l.categorieAppareil}</span>
+                                                    <span className="text-xl font-black text-slate-900 leading-none">{l.nombre}</span>
+                                                </div>
+                                            ))}
+                                            <div className="p-4 flex flex-col items-center justify-center text-center bg-indigo-50/30">
+                                                <DollarSign className="w-4 h-4 text-indigo-600 mb-1" />
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1">Montant Estimé</span>
+                                                <span className="text-xl font-black text-indigo-600 leading-none">{d.lignes.reduce((acc: number, curr: any) => acc + Number(curr.montantLigne), 0).toLocaleString()}$</span>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                            {declarations.length === 0 && (
+                                <div className="p-12 text-center border-2 border-dashed border-slate-100 rounded-2xl italic text-slate-400 text-sm">
+                                    Aucune déclaration disponible.
                                 </div>
-                            ) : (
+                            )}
+                        </div>
+                    </section>
+
+                    {/* Unified Payments & Notes Ledger */}
+                    <section className="space-y-4">
+                        <div className="flex items-center justify-between px-1">
+                            <h3 className="text-sm font-black uppercase text-slate-900 tracking-widest flex items-center gap-2">
+                                <Receipt className="w-4 h-4 text-emerald-600" />
+                                Journal Financier Elaboré
+                            </h3>
+                        </div>
+                        <Card className="border-slate-200 shadow-sm rounded-2xl overflow-hidden">
+                            <div className="overflow-x-auto">
                                 <table className="w-full text-left">
-                                    <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase">
+                                    <thead className="bg-slate-50 border-b border-slate-100">
                                         <tr>
-                                            <th className="px-6 py-3">Date</th>
-                                            <th className="px-6 py-3">Canal</th>
-                                            <th className="px-6 py-3">Référence</th>
-                                            <th className="px-6 py-3 text-right">Montant</th>
-                                            <th className="px-6 py-3">Statut</th>
+                                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Date / Exercice</th>
+                                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Type / Opération</th>
+                                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Détails / Réf</th>
+                                            <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Montant</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {history.map((p: any) => (
-                                            <tr key={p.id} className="text-sm">
-                                                <td className="px-6 py-4">{new Date(p.datePaiement).toLocaleDateString()}</td>
-                                                <td className="px-6 py-4 font-medium uppercase text-[11px]">{p.canal}</td>
-                                                <td className="px-6 py-4 font-mono text-xs">{p.referenceTransaction}</td>
-                                                <td className="px-6 py-4 text-right font-bold text-emerald-600">{Number(p.montant).toLocaleString()}$</td>
+                                        {/* Simplified Ledger combining notes and payments */}
+                                        {nodesToHistory(notes, history).map((item, idx) => (
+                                            <tr key={idx} className={cn(
+                                                "hover:bg-slate-50/50 transition-colors",
+                                                item.type === 'note' ? "bg-slate-50/30" : ""
+                                            )}>
                                                 <td className="px-6 py-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-xs font-bold text-slate-900">{new Date(item.date).toLocaleDateString()}</span>
+                                                        <span className="text-[10px] font-mono font-bold text-indigo-500">EX. {item.exercice}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className={cn(
+                                                            "w-7 h-7 rounded-lg flex items-center justify-center shrink-0",
+                                                            item.type === 'note' ? "bg-slate-100 text-slate-600" : "bg-emerald-50 text-emerald-600"
+                                                        )}>
+                                                            {item.type === 'note' ? <Receipt className="w-3.5 h-3.5" /> : <Wallet className="w-3.5 h-3.5" />}
+                                                        </div>
+                                                        <span className="text-[11px] font-black uppercase text-slate-700">
+                                                            {item.type === 'note' ? 'Taxation' : `Paiement ${item.canal}`}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="text-[10px] font-mono text-slate-400 truncate max-w-[150px] block">{item.ref || '—'}</span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
                                                     <span className={cn(
-                                                        "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                                                        p.statut === 'confirme' ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                                                        "text-sm font-black font-mono",
+                                                        item.type === 'note' ? "text-slate-900" : "text-emerald-600"
                                                     )}>
-                                                        {p.statut}
+                                                        {item.type === 'note' ? '-' : '+'}{Number(item.montant).toLocaleString()}$
                                                     </span>
                                                 </td>
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    <Card className="shadow-sm border-slate-200">
-                        <CardHeader className="bg-slate-50 border-b border-slate-100 flex flex-row items-center justify-between">
-                            <CardTitle className="text-sm font-bold uppercase tracking-wider h-4 flex items-center">Notes de Taxation / Dettes</CardTitle>
-                            <ArrowUpRight className="w-4 h-4 text-blue-600" />
-                        </CardHeader>
-                        <CardContent className="p-0">
-                            {notes.length === 0 ? (
-                                <div className="p-12 text-center text-slate-400">
-                                    <p>Aucune note de taxation émise.</p>
-                                </div>
-                            ) : (
-                                <table className="w-full text-left">
-                                    <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase">
-                                        <tr>
-                                            <th className="px-6 py-3">N° Note</th>
-                                            <th className="px-6 py-3 text-right">Montant Dû</th>
-                                            <th className="px-6 py-3">Exercice</th>
-                                            <th className="px-6 py-3">Date émission</th>
-                                            <th className="px-6 py-3">Statut</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {notes.map((n: any) => (
-                                            <tr key={n.id} className="text-sm">
-                                                <td className="px-6 py-4 font-mono text-xs font-bold text-indigo-600">{n.numeroNote || "—"}</td>
-                                                <td className="px-6 py-4 text-right font-bold text-slate-700">{Number(n.montantTotalDu).toLocaleString()}$</td>
-                                                <td className="px-6 py-4 italic font-medium">{n.exercice}</td>
-                                                <td className="px-6 py-4">{n.dateEmission ? new Date(n.dateEmission).toLocaleDateString() : "—"}</td>
-                                                <td className="px-6 py-4 capitalize">{n.statut}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                        </CardContent>
-                    </Card>
+                            </div>
+                        </Card>
+                    </section>
                 </div>
             </div>
         </motion.div>
     );
 }
 
-function DetailRow({ label, value, isMono }: { label: string, value: string | null, isMono?: boolean }) {
+// Helper to merge and sort notes and payments chronologically
+function nodesToHistory(notes: any[], payments: any[]) {
+    const history: any[] = [];
+    notes.forEach(n => history.push({ 
+        date: n.dateEmission || n.createdAt, 
+        exercice: n.exercice, 
+        type: 'note', 
+        montant: n.montantTotalDu, 
+        ref: n.numeroNote,
+        canal: null
+    }));
+    payments.forEach(p => history.push({ 
+        date: p.datePaiement, 
+        exercice: null, // Should ideally be linked to a note/exercise
+        type: 'paiement', 
+        montant: p.montant, 
+        ref: p.referenceTransaction,
+        canal: p.canal
+    }));
+    return history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
+function StatusBadgeDetailed({ status }: { status: string }) {
+    const config: any = {
+        validee: { label: "Validée", class: "bg-emerald-50 text-emerald-600 border-emerald-100" },
+        soumise: { label: "Soumise", class: "bg-blue-50 text-blue-600 border-blue-100" },
+        brouillon: { label: "Brouillon", class: "bg-slate-100 text-slate-500 border-slate-200" },
+    };
+    const s = config[status] || { label: status, class: "bg-slate-100" };
+    return (
+        <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-black uppercase border", s.class)}>
+            {s.label}
+        </span>
+    );
+}
+
+function RecapCard({ title, value, icon, color, bgColor }: any) {
+    return (
+        <Card className="border-slate-200 shadow-sm">
+            <CardContent className="p-5 flex items-center justify-between">
+                <div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{title}</p>
+                    <p className={cn("text-2xl font-black tracking-tight", color)}>{value}</p>
+                </div>
+                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", bgColor, color)}>
+                    {icon}
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+function DetailRow({ label, value, isMono, className }: { label: string, value: string | null, isMono?: boolean, className?: string }) {
     return (
         <div className="space-y-1">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
             <p className={cn(
-                "text-sm font-semibold truncate",
-                isMono ? "font-mono" : "text-slate-900"
+                "font-bold leading-tight",
+                isMono ? "font-mono text-xs" : "text-sm",
+                className || "text-slate-800"
             )}>
                 {value || "—"}
             </p>

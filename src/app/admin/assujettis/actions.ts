@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { assujettis, paiements, notesTaxation, appUsers, geographies } from "@/db/schema";
+import { assujettis, paiements, notesTaxation, appUsers, geographies, declarations, lignesDeclaration } from "@/db/schema";
 import { eq, sql, desc, and } from "drizzle-orm";
 import { getSession } from "@/lib/auth/session";
 
@@ -79,12 +79,30 @@ export async function getAssujettiDetailsAction(id: string) {
             .where(eq(notesTaxation.assujettiId, id))
             .orderBy(desc(notesTaxation.exercice));
 
+        const decls = await db.select()
+            .from(declarations)
+            .where(eq(declarations.assujettiId, id))
+            .orderBy(desc(declarations.exercice));
+        
+        // Fetch detailed lines for all declarations of this assujetti
+        const declarationIds = decls.map(d => d.id);
+        let lines: any[] = [];
+        if (declarationIds.length > 0) {
+            lines = await db.select()
+                .from(lignesDeclaration)
+                .where(sql`${lignesDeclaration.declarationId} IN ${declarationIds}`);
+        }
+
         return {
             success: true,
             data: {
                 assujetti,
                 paiements: history,
                 notes,
+                declarations: decls.map(d => ({
+                    ...d,
+                    lignes: lines.filter(l => l.declarationId === d.id)
+                }))
             }
         };
     } catch (error: any) {
