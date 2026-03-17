@@ -435,7 +435,7 @@ export const missionsTerrain = pgTable("missions_terrain", {
     dateDebut: date("date_debut").notNull(),
     dateFin: date("date_fin").notNull(),
     objectif: text("objectif"),
-    statut: varchar("statut", { length: 20 }).default("active"), // active, terminee, annulee
+    statut: varchar("statut", { length: 20 }).default("active").notNull(), // active, terminee, annulee
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").$onUpdate(() => new Date()),
 });

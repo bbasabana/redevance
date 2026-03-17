@@ -1,4 +1,4 @@
-import { getAgentPerformanceListAction, getDeploymentDataAction } from "./actions";
+import { getAgentPerformanceListAction, getDeploymentDataAction, type DeploymentData } from "./actions";
 import { AgentPerformanceClient } from "@/app/admin/(dashboard)/rapports/agents/AgentPerformanceClient";
 
 export default async function AgentReportsPage() {
@@ -8,7 +8,7 @@ export default async function AgentReportsPage() {
     ]);
     
     const initialData = perfRes.success ? perfRes.data : [];
-    const deploymentData = deployRes.success ? deployRes.data : null;
+    const deploymentData = deployRes.success ? (deployRes.data as DeploymentData) : null;
 
     return (
         <div className="space-y-6">

@@ -87,7 +87,32 @@ export async function getAgentActivityDetailAction(agentId: string) {
     }
 }
 
-export async function getDeploymentDataAction() {
+export type DeploymentData = {
+    agentsPerCommune: {
+        communeId: string;
+        commune: string;
+        count: number;
+    }[];
+    activeMissions: {
+        id: string;
+        agentName: string;
+        communeName: string;
+        dateDebut: string;
+        dateFin: string;
+        statut: string;
+        objectif: string | null;
+    }[];
+    allAgents: {
+        id: string;
+        nomPrenom: string;
+    }[];
+    allCommunes: {
+        id: string;
+        nom: string;
+    }[];
+};
+
+export async function getDeploymentDataAction(): Promise<{ success: true; data: DeploymentData } | { success: false; error: string }> {
     const session = await getSession();
     if (!session || session.user.role !== "admin") {
         return { success: false, error: "Non autorisé" };
