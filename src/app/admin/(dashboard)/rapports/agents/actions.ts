@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { appUsers, controlesTerrain, notesRectificativesTerrain, assujettis, userRoles, roles, geographies } from "@/db/schema";
+import { appUsers, controlesTerrain, notesRectificativesTerrain, assujettis, userRoles, roles, geographies, missionsTerrain } from "@/db/schema";
 import { eq, sql, desc, and } from "drizzle-orm";
 import { getSession } from "@/lib/auth/session";
 
@@ -82,6 +82,92 @@ export async function getAgentActivityDetailAction(agentId: string) {
             success: true,
             data: activities
         };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function getDeploymentDataAction() {
+    const session = await getSession();
+    if (!session || session.user.role !== "admin") {
+        return { success: false, error: "Non autorisé" };
+    }
+
+    try {
+        // Stats: Agents per commune
+        const agentsPerCommune = await db.select({
+            communeId: geographies.id,
+            commune: geographies.nom,
+            count: sql<number>`COUNT(${appUsers.id})`,
+        })
+        .from(geographies)
+        .leftJoin(appUsers, eq(geographies.id, appUsers.assignedCommuneId))
+        .groupBy(geographies.id, geographies.nom);
+
+        // All active missions
+        const activeMissions = await db.select({
+            id: missionsTerrain.id,
+            agentName: appUsers.nomPrenom,
+            communeName: geographies.nom,
+            dateDebut: missionsTerrain.dateDebut,
+            dateFin: missionsTerrain.dateFin,
+            statut: missionsTerrain.statut,
+            objectif: missionsTerrain.objectif,
+        })
+        .from(missionsTerrain)
+        .innerJoin(appUsers, eq(missionsTerrain.agentId, appUsers.id))
+        .innerJoin(geographies, eq(missionsTerrain.communeId, geographies.id))
+        .orderBy(desc(missionsTerrain.createdAt));
+
+        // List of all agents for the dropdown
+        const allAgents = await db.select({
+            id: appUsers.id,
+            nomPrenom: appUsers.nomPrenom,
+        })
+        .from(appUsers)
+        .innerJoin(userRoles, eq(appUsers.id, userRoles.userId))
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(roles.name, 'agent'));
+
+        // List of all communes for the dropdown
+        const allCommunes = await db.select({
+            id: geographies.id,
+            nom: geographies.nom,
+        })
+        .from(geographies)
+        .where(eq(geographies.isActive, true));
+
+        return {
+            success: true,
+            data: {
+                agentsPerCommune,
+                activeMissions,
+                allAgents,
+                allCommunes
+            }
+        };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
+
+export async function createMissionAction(data: { agentId: string; communeId: string; dateDebut: string; dateFin: string; objectif?: string }) {
+    const session = await getSession();
+    if (!session || session.user.role !== "admin") {
+        return { success: false, error: "Non autorisé" };
+    }
+
+    try {
+        await db.insert(missionsTerrain).values({
+            agentId: data.agentId,
+            communeId: data.communeId,
+            dateDebut: data.dateDebut,
+            dateFin: data.dateFin,
+            objectif: data.objectif,
+            statut: 'active',
+        });
+
+        return { success: true };
     } catch (error: any) {
         return { success: false, error: error.message };
     }

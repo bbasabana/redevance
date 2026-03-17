@@ -427,3 +427,15 @@ export const settings = pgTable("settings", {
     description: text("description"),
     updatedAt: timestamp("updated_at").$onUpdate(() => new Date()),
 });
+
+export const missionsTerrain = pgTable("missions_terrain", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id").references(() => appUsers.id).notNull(),
+    communeId: uuid("commune_id").references(() => geographies.id).notNull(),
+    dateDebut: date("date_debut").notNull(),
+    dateFin: date("date_fin").notNull(),
+    objectif: text("objectif"),
+    statut: varchar("statut", { length: 20 }).default("active"), // active, terminee, annulee
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").$onUpdate(() => new Date()),
+});
