@@ -183,13 +183,21 @@ export async function createMissionAction(data: { agentId: string; communeId: st
     }
 
     try {
-        await db.insert(missionsTerrain).values({
-            agentId: data.agentId,
-            communeId: data.communeId,
-            dateDebut: data.dateDebut,
-            dateFin: data.dateFin,
-            objectif: data.objectif,
-            statut: 'active',
+        await db.transaction(async (tx) => {
+            // Create the mission
+            await tx.insert(missionsTerrain).values({
+                agentId: data.agentId,
+                communeId: data.communeId,
+                dateDebut: data.dateDebut,
+                dateFin: data.dateFin,
+                objectif: data.objectif,
+                statut: 'active',
+            });
+
+            // Update the agent's assigned commune for current status
+            await tx.update(appUsers)
+                .set({ assignedCommuneId: data.communeId })
+                .where(eq(appUsers.id, data.agentId));
         });
 
         return { success: true };

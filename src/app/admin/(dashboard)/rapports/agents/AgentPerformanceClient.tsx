@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef } from "react";
 import { 
     type AgentPerformanceRow, 
     getAgentActivityDetailAction, 
@@ -66,6 +66,15 @@ export function AgentPerformanceClient({ initialData, deploymentData }: AgentPer
     const [agentActivities, setAgentActivities] = useState<any[]>([]);
     const [isLoadingActivities, setIsLoadingActivities] = useState(false);
     const [isPending, startTransition] = useTransition();
+    const deploymentFormRef = useRef<HTMLDivElement>(null);
+
+    const handleDeployAgent = (agentId: string) => {
+        setMissionForm(prev => ({ ...prev, agentId }));
+        setActiveTab("deployment");
+        setTimeout(() => {
+            deploymentFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
+    };
 
     // Deployment Form State (controlled)
     const [missionForm, setMissionForm] = useState({
@@ -294,6 +303,15 @@ export function AgentPerformanceClient({ initialData, deploymentData }: AgentPer
                                                         <span className="text-[10px] font-black uppercase tracking-widest mr-1">Rapport</span>
                                                         <ChevronRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
                                                     </Button>
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="sm" 
+                                                        className="hover:bg-emerald-50 hover:text-emerald-600 rounded-lg ml-2"
+                                                        onClick={() => handleDeployAgent(agent.id)}
+                                                    >
+                                                        <MapPin className="w-3 h-3 mr-1" />
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">Déployer</span>
+                                                    </Button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -312,7 +330,7 @@ export function AgentPerformanceClient({ initialData, deploymentData }: AgentPer
                     >
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             {/* Left Column: Stats & New Mission Form */}
-                            <div className="lg:col-span-1 space-y-6">
+                            <div className="lg:col-span-1 space-y-6" ref={deploymentFormRef}>
                                 <Card className="border-slate-200">
                                     <CardHeader>
                                         <CardTitle className="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
