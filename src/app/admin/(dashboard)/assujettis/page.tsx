@@ -1,5 +1,5 @@
 import { getAssujettisFinancialListAction } from "./actions";
-import { AssujettiListClient } from "@/app/admin/assujettis/AssujettiListClient";
+import { AssujettiListClient } from "@/app/admin/(dashboard)/assujettis/AssujettiListClient";
 
 export default async function AssujettisPage() {
     const res = await getAssujettisFinancialListAction();

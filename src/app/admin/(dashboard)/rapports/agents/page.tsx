@@ -1,5 +1,5 @@
 import { getAgentPerformanceListAction } from "./actions";
-import { AgentPerformanceClient } from "@/app/admin/rapports/agents/AgentPerformanceClient";
+import { AgentPerformanceClient } from "@/app/admin/(dashboard)/rapports/agents/AgentPerformanceClient";
 
 export default async function AgentReportsPage() {
     const res = await getAgentPerformanceListAction();
