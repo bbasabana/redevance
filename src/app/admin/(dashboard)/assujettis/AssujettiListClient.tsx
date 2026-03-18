@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { type AssujettiFinancialRow, getAssujettiDetailsAction } from "./actions";
+import { confirmPayment } from "@/app/actions/payments";
+import { useRouter } from "next/navigation";
 import { 
     Search, 
     Filter, 
@@ -20,8 +22,14 @@ import {
     FileText,
     Receipt,
     Wallet,
-    Info
+    Info,
+    Loader2,
+    ShieldCheck,
+    History
 } from "lucide-react";
+import dynamic from "next/dynamic";
+
+const QuittanceDownloadButton = dynamic(() => import("@/components/assujetti/QuittanceDownloadButton"), { ssr: false });
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -228,7 +236,26 @@ function StatusBadge({ totalPaye, totalDu, statut }: { totalPaye: number, totalD
 }
 
 function AssujettiDetailView({ data, onBack }: { data: any, onBack: () => void }) {
+    const router = useRouter();
     const { assujetti, paiements: history, notes, declarations } = data;
+    const [isConfirming, setIsConfirming] = useState<string | null>(null);
+
+    const handleConfirm = async (paymentId: string) => {
+        setIsConfirming(paymentId);
+        try {
+            const res = await confirmPayment(paymentId);
+            if (res.success) {
+                toast.success("Paiement confirmé avec succès");
+                onBack(); // Simple Refresh by closing view
+            } else {
+                toast.error(res.error || "Erreur lors de la confirmation");
+            }
+        } catch (error) {
+            toast.error("Erreur de connexion");
+        } finally {
+            setIsConfirming(null);
+        }
+    };
 
     const totalDue = notes.reduce((acc: number, curr: any) => acc + Number(curr.montantTotalDu), 0);
     const totalPaid = history.reduce((acc: number, curr: any) => acc + Number(curr.montant), 0);
@@ -424,12 +451,39 @@ function AssujettiDetailView({ data, onBack }: { data: any, onBack: () => void }
                                                     <span className="text-[10px] font-mono text-slate-400 truncate max-w-[150px] block">{item.ref || '—'}</span>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
-                                                    <span className={cn(
-                                                        "text-sm font-black font-mono",
-                                                        item.type === 'note' ? "text-slate-900" : "text-emerald-600"
-                                                    )}>
-                                                        {item.type === 'note' ? '-' : '+'}{Number(item.montant).toLocaleString()}$
-                                                    </span>
+                                                    <div className="flex flex-col items-end">
+                                                        <span className={cn(
+                                                            "text-sm font-black font-mono",
+                                                            item.type === 'note' ? "text-slate-900" : "text-emerald-600"
+                                                        )}>
+                                                            {item.type === 'note' ? '-' : '+'}{Number(item.montant).toLocaleString()}$
+                                                        </span>
+                                                        {item.type === 'paiement' && item.statut === 'en_attente' && (
+                                                            <Button 
+                                                                size="sm" 
+                                                                variant="outline"
+                                                                className="mt-2 h-7 px-2 text-[8px] font-black uppercase border-emerald-200 text-emerald-600 hover:bg-emerald-50"
+                                                                onClick={() => handleConfirm(item.id)}
+                                                                disabled={isConfirming === item.id}
+                                                            >
+                                                                {isConfirming === item.id ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <ShieldCheck className="w-3 h-3 mr-1" />}
+                                                                Valider
+                                                            </Button>
+                                                        )}
+                                                        {item.type === 'paiement' && item.statut === 'confirme' && (
+                                                            <div className="flex flex-col items-end gap-1 mt-1">
+                                                                <span className="text-[8px] font-bold text-emerald-500 uppercase flex items-center gap-1">
+                                                                    <CheckCircle2 className="w-2 h-2" /> Confirmé
+                                                                </span>
+                                                                <QuittanceDownloadButton 
+                                                                    payment={item.sourcePayment}
+                                                                    assujetti={assujetti}
+                                                                    note={item.sourceNote}
+                                                                    className="h-6 px-1.5 py-0"
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -453,16 +507,24 @@ function nodesToHistory(notes: any[], payments: any[]) {
         type: 'note', 
         montant: n.montantTotalDu, 
         ref: n.numeroNote,
-        canal: null
+        canal: null,
+        sourceNote: n
     }));
-    payments.forEach(p => history.push({ 
-        date: p.datePaiement, 
-        exercice: null, // Should ideally be linked to a note/exercise
-        type: 'paiement', 
-        montant: p.montant, 
-        ref: p.referenceTransaction,
-        canal: p.canal
-    }));
+    payments.forEach(p => {
+        const relatedNote = notes.find(n => n.id === p.noteTaxationId);
+        history.push({ 
+            id: p.id,
+            date: p.datePaiement, 
+            exercice: relatedNote?.exercice || null, 
+            type: 'paiement', 
+            montant: p.montant, 
+            ref: p.referenceTransaction,
+            canal: p.canal,
+            statut: p.statut,
+            sourcePayment: p,
+            sourceNote: relatedNote
+        });
+    });
     return history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 

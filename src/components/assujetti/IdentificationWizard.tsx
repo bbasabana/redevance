@@ -12,10 +12,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import CountUp from "react-countup";
-import { getProvinces, getChildrenGeographies, completeIdentification } from "@/app/actions/taxation";
+import { getProvinces, getChildrenGeographies, calculateTax, completeIdentification, checkUniqueness } from "@/app/actions/taxation";
 import { saveIdentificationStep } from "@/app/actions/onboarding";
 import dynamic from "next/dynamic";
 import MapSlideOver from "./MapSlideOver";
@@ -71,6 +72,7 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
     const [quartiers, setQuartiers] = useState<any[]>([]);
     const [quartier, setQuartier] = useState(progress?.step1Data?.quartier || "");
     const [adressePhysique, setAdressePhysique] = useState(progress?.step1Data?.adressePhysique || assujetti?.adresseSiege || "");
+    const [numero, setNumero] = useState(progress?.step1Data?.numero || "");
     const [adresseLat, setAdresseLat] = useState<number | undefined>(progress?.step1Data?.adresseLat);
     const [adresseLng, setAdresseLng] = useState<number | undefined>(progress?.step1Data?.adresseLng);
 
@@ -79,6 +81,8 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
     const [isVilleProvince, setIsVilleProvince] = useState(false);
 
     // --- STEP 2: Identification ---
+    const isPP = assujetti?.typePersonne === "pp";
+    const [hasEstablishment, setHasEstablishment] = useState(progress?.step2Data?.hasEstablishment ?? !isPP);
     const [structure, setStructure] = useState<"societe" | "etablissement" | "asbl" | "autre">(progress?.step2Data?.structure || "societe");
     const [activities, setActivities] = useState<string[]>(progress?.step2Data?.activities || []);
     const [autreActivite, setAutreActivite] = useState(progress?.step2Data?.autreActivite || "");
@@ -103,6 +107,76 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
         rccm: !!assujettiRccm && isRccmValidFormat(assujettiRccm),
         idNat: !!assujettiIdNat && isIdNatValidFormat(assujettiIdNat),
     });
+
+    const [uniquenessErrors, setUniquenessErrors] = useState<Record<string, string>>({});
+
+    const PROVINCE_RCCM_CODES: Record<string, string> = {
+        "Kinshasa": "KIN",
+        "Haut-Katanga": "LSH",
+        "Lualaba": "KOL",
+        "Nord-Kivu": "GOM",
+        "Sud-Kivu": "BUV",
+        "Tshopo": "KIS",
+        "Kongo Central": "MAT",
+        "Kasaï Oriental": "MBU",
+        "Kasaï Central": "KAN",
+        "Équateur": "MBA",
+        "Ituri": "BUN",
+        "Haut-Uélé": "ISI",
+        "Bas-Uélé": "BUT",
+        "Maniema": "KID",
+        "Tanganyika": "KMI",
+        "Haut-Lomami": "KMA",
+        "Lomami": "KAB",
+        "Sankuru": "LOD",
+        "Kasaï": "TSH",
+        "Kwilu": "KKT",
+        "Kwango": "KEN",
+        "Maï-Ndombe": "INO",
+        "Tshuapa": "BOE",
+        "Mongala": "LIS",
+        "Nord-Ubangi": "GBA",
+        "Sud-Ubangi": "GEM"
+    };
+
+    // Auto-prefix RCCM based on province
+    useEffect(() => {
+        if (province && !lockedFields.rccm) {
+            const selectedProvince = provinces.find(p => p.id === province);
+            if (selectedProvince) {
+                const code = PROVINCE_RCCM_CODES[selectedProvince.nom] || selectedProvince.nom.substring(0, 3).toUpperCase();
+                const prefix = `CD/${code}/RCCM:`;
+                
+                // Only update if it's empty or already looks like an RCCM prefix but with wrong code
+                if (!entityInfo.rccm || (entityInfo.rccm.startsWith("CD/") && !entityInfo.rccm.includes("-"))) {
+                    setEntityInfo(prev => ({ ...prev, rccm: prefix }));
+                }
+            }
+        }
+    }, [province, provinces]);
+
+    // Debounce effect for uniqueness checks
+    useEffect(() => {
+        const handler = setTimeout(async () => {
+            const newErrors: Record<string, string> = {};
+
+            if (entityInfo.numeroImpot && !lockedFields.numeroImpot && isNifValidFormat(entityInfo.numeroImpot)) {
+                const res = await checkUniqueness('nif', entityInfo.numeroImpot, assujetti?.id);
+                if (!res.isUnique) newErrors.nif = "Ce NIF est déjà utilisé.";
+            }
+            if (entityInfo.rccm && !lockedFields.rccm && isRccmValidFormat(entityInfo.rccm)) {
+                const res = await checkUniqueness('rccm', entityInfo.rccm, assujetti?.id);
+                if (!res.isUnique) newErrors.rccm = "Ce RCCM est déjà utilisé.";
+            }
+            if (entityInfo.idNat && !lockedFields.idNat && isIdNatValidFormat(entityInfo.idNat)) {
+                const res = await checkUniqueness('idNat', entityInfo.idNat, assujetti?.id);
+                if (!res.isUnique) newErrors.idNat = "Cet ID NAT est déjà utilisé.";
+            }
+            setUniquenessErrors(newErrors);
+        }, 500); 
+
+        return () => clearTimeout(handler);
+    }, [entityInfo.numeroImpot, entityInfo.rccm, entityInfo.idNat, lockedFields, assujetti?.id]);
 
     // --- STEP 3: Détention ---
     const [nbTv, setNbTv] = useState<number>(progress?.step3Data?.nbTv || 0);
@@ -137,6 +211,52 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
         };
     }, [step]);
 
+    // PRE-POPULATION LOGIC (String Match from Registration)
+    // 1. Try to match Province if not set
+    useEffect(() => {
+        if (!province && provinces.length > 0 && assujetti?.adresseSiege) {
+            // Very simple check: see if any province name is in the address string
+            const found = provinces.find(p =>
+                assujetti.adresseSiege.toLowerCase().includes(p.nom.toLowerCase())
+            );
+            if (found) setProvince(found.id);
+        }
+    }, [provinces, province, assujetti?.adresseSiege]);
+
+    // 2. Try to match Ville/Cite from registration commune/quartier if not set
+    useEffect(() => {
+        if (province && (villes.length > 0 || cites.length > 0) && !ville && !cite) {
+            const regCommune = assujetti?.commune?.toLowerCase();
+            const foundVille = villes.find(v => v.nom.toLowerCase() === regCommune);
+            if (foundVille) {
+                setVille(foundVille.id);
+            } else {
+                const foundCite = cites.find(c => c.nom.toLowerCase() === regCommune);
+                if (foundCite) setCite(foundCite.id);
+            }
+        }
+    }, [villes, cites, province, ville, cite, assujetti?.commune]);
+
+    // 3. Try to match Commune if not set
+    useEffect(() => {
+        if (communes.length > 0 && !commune) {
+            const regCommune = assujetti?.commune?.toLowerCase();
+            const found = communes.find(c => c.nom.toLowerCase() === regCommune);
+            if (found) setCommune(found.id);
+        }
+    }, [communes, commune, assujetti?.commune]);
+
+    // 4. Try to match Quartier if not set
+    useEffect(() => {
+        if (quartiers.length > 0 && !quartier) {
+            const regQuartier = (assujetti?.quartier || progress?.step1Data?.quartier)?.toLowerCase();
+            if (regQuartier) {
+                const found = quartiers.find(q => q.nom.toLowerCase() === regQuartier);
+                if (found) setQuartier(found.id);
+            }
+        }
+    }, [quartiers, quartier, assujetti?.quartier, progress?.step1Data?.quartier]);
+
     // Load Villes & Cités based on Province - also detect if ville-province (direct communes)
     useEffect(() => {
         if (province) {
@@ -156,6 +276,12 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                         // Ville-province: communes are direct children of province
                         setIsVilleProvince(true);
                         setCommunes(communeChildren);
+                        
+                        // Handle Kinshasa specifically for UI requirement
+                        const provName = provinces.find(p => p.id === province)?.nom?.toLowerCase() || "";
+                        if (provName.includes("kinshasa")) {
+                            setVille("KINSHASA_VIRTUAL");
+                        }
                     } else {
                         setVilles(villeChildren);
                         setCites(citeChildren);
@@ -205,18 +331,21 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                 }
 
                 await saveIdentificationStep(session.user.id, 1, {
-                    province, ville, cite, commune, quartier, adressePhysique, adresseLat, adresseLng
+                    province, ville, cite, commune, quartier, adressePhysique, numero, adresseLat, adresseLng
                 });
 
             } else if (step === 2) {
-                if (activities.length === 0) {
-                    toast.error("Veuillez sélectionner au moins une activité.");
-                    return;
+                if (hasEstablishment) {
+                    if (activities.length === 0) {
+                        toast.error("Veuillez sélectionner au moins une activité.");
+                        return;
+                    }
+                    if (activities.includes("autre") && !autreActivite.trim()) {
+                        toast.error("Veuillez préciser votre activité dans le champ 'Autre'.");
+                        return;
+                    }
                 }
-                if (activities.includes("autre") && !autreActivite.trim()) {
-                    toast.error("Veuillez préciser votre activité dans le champ 'Autre'.");
-                    return;
-                }
+                
                 if (!entityInfo.idNat.trim() || !isIdNatValidFormat(entityInfo.idNat)) {
                     toast.error("L'Identification Nationale (Id. Nat) est obligatoire et doit être au format valide.", { className: "text-red-500" });
                     return;
@@ -226,7 +355,7 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                     return;
                 }
                 await saveIdentificationStep(session.user.id, 2, {
-                    structure, activities, autreActivite, representant, email, telephone, entityInfo
+                    hasEstablishment, structure, activities, autreActivite, representant, email, telephone, entityInfo
                 });
             } else if (step === 3) {
                 await saveIdentificationStep(session.user.id, 3, {
@@ -292,6 +421,13 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
             else if (cite && cite !== "indisponible") finalGeographyId = cite;
             else if (ville && ville !== "indisponible") finalGeographyId = ville;
             else if (province && province !== "indisponible") finalGeographyId = province;
+
+            const hasUniquenessErrors = Object.keys(uniquenessErrors).length > 0;
+            if (hasUniquenessErrors) {
+                toast.error("Veuillez corriger les identifiants déjà enregistrés.");
+                setIsSubmitting(false);
+                return;
+            }
 
             const res = await completeIdentification({
                 geographyId: finalGeographyId,
@@ -400,47 +536,56 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                             </Select>
                                         </div>
 
-                                        {/* Ville / Cité — hidden for ville-province */}
-                                        {!isVilleProvince && (
+                                        {/* Ville / Cité — hidden for ville-province, except Kinshasa as requested */}
+                                        {(!isVilleProvince || (isVilleProvince && ville === "KINSHASA_VIRTUAL")) && (
                                             <div className="grid grid-cols-2 gap-4">
-                                                <div className="space-y-1">
-                                                    <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Ville</Label>
-                                                    <Select
-                                                        value={ville}
-                                                        onValueChange={(v) => { setVille(v); setCite(""); }}
-                                                        disabled={!province || !!cite}
-                                                    >
-                                                        <SelectTrigger className="h-11 bg-slate-50 border-slate-200 rounded-lg text-sm">
-                                                            <SelectValue placeholder="Ville" />
-                                                        </SelectTrigger>
-                                                        <SelectContent position="popper" className="max-h-[300px]">
-                                                            {villes.length > 0 ? (
-                                                                villes.map(v => <SelectItem key={v.id} value={v.id}>{v.nom}</SelectItem>)
-                                                            ) : (
-                                                                <SelectItem value="indisponible" className="text-slate-500 italic">Indisponible (à configurer)</SelectItem>
-                                                            )}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Cité / Ter.</Label>
-                                                    <Select
-                                                        value={cite}
-                                                        onValueChange={(v) => { setCite(v); setVille(""); }}
-                                                        disabled={!province || !!ville}
-                                                    >
-                                                        <SelectTrigger className="h-11 bg-slate-50 border-slate-200 rounded-lg text-sm">
-                                                            <SelectValue placeholder="Cité / Terr." />
-                                                        </SelectTrigger>
-                                                        <SelectContent position="popper" className="max-h-[300px]">
-                                                            {cites.length > 0 ? (
-                                                                cites.map(c => <SelectItem key={c.id} value={c.id}>{c.nom}</SelectItem>)
-                                                            ) : (
-                                                                <SelectItem value="indisponible" className="text-slate-500 italic">Indisponible (à configurer)</SelectItem>
-                                                            )}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
+                                                {ville === "KINSHASA_VIRTUAL" ? (
+                                                    <div className="space-y-1 col-span-2">
+                                                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Ville</Label>
+                                                        <Input disabled value="Kinshasa" className="h-11 bg-slate-100 border-none rounded-lg text-sm font-bold text-slate-700" />
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div className="space-y-1">
+                                                            <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Ville</Label>
+                                                            <Select
+                                                                value={ville}
+                                                                onValueChange={(v) => { setVille(v); setCite(""); }}
+                                                                disabled={!province || !!cite}
+                                                            >
+                                                                <SelectTrigger className="h-11 bg-slate-50 border-slate-200 rounded-lg text-sm">
+                                                                    <SelectValue placeholder="Ville" />
+                                                                </SelectTrigger>
+                                                                <SelectContent position="popper" className="max-h-[300px]">
+                                                                    {villes.length > 0 ? (
+                                                                        villes.map(v => <SelectItem key={v.id} value={v.id}>{v.nom}</SelectItem>)
+                                                                    ) : (
+                                                                        <SelectItem value="indisponible" className="text-slate-500 italic">Indisponible (à configurer)</SelectItem>
+                                                                    )}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Cité / Ter.</Label>
+                                                            <Select
+                                                                value={cite}
+                                                                onValueChange={(v) => { setCite(v); setVille(""); }}
+                                                                disabled={!province || !!ville}
+                                                            >
+                                                                <SelectTrigger className="h-11 bg-slate-50 border-slate-200 rounded-lg text-sm">
+                                                                    <SelectValue placeholder="Cité / Terr." />
+                                                                </SelectTrigger>
+                                                                <SelectContent position="popper" className="max-h-[300px]">
+                                                                    {cites.length > 0 ? (
+                                                                        cites.map(c => <SelectItem key={c.id} value={c.id}>{c.nom}</SelectItem>)
+                                                                    ) : (
+                                                                        <SelectItem value="indisponible" className="text-slate-500 italic">Indisponible (à configurer)</SelectItem>
+                                                                    )}
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
                                         )}
 
@@ -497,6 +642,14 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                                     <Map className="w-4 h-4" />
                                                 </button>
                                             </div>
+                                            {(adresseLat && adresseLng) && (
+                                                <div className="flex items-center gap-1.5 mt-1.5 ml-1">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
+                                                        Position GPS confirmée : {adresseLat.toFixed(6)}, {adresseLng.toFixed(6)}
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -505,7 +658,20 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                             {/* STEP 2: IDENTIFICATION */}
                             {step === 2 && (
                                 <div className="space-y-4">
-                                    <div className="space-y-2">
+                                    {isPP && (
+                                        <div className="flex items-center space-x-2 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 mb-2">
+                                            <Checkbox
+                                                id="hasEstablishment"
+                                                checked={hasEstablishment}
+                                                onCheckedChange={(checked) => setHasEstablishment(!!checked)}
+                                            />
+                                            <Label htmlFor="hasEstablishment" className="text-xs font-bold text-[#0d2870] cursor-pointer">
+                                                Avez-vous un établissement à renseigner ?
+                                            </Label>
+                                        </div>
+                                    )}
+
+                                    {hasEstablishment && (
                                         <div className="space-y-1">
                                             <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Structure</Label>
                                             <div className="grid grid-cols-4 gap-2">
@@ -523,39 +689,55 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                                 ))}
                                             </div>
                                         </div>
+                                    )}
 
-                                        <div className="space-y-4">
+                                    <div className="space-y-4 pt-2">
+                                        <div className="space-y-1">
+                                            <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Dénomination / Nom Complet</Label>
+                                            <Input disabled value={entityInfo.nom} className="h-11 bg-slate-100 border-none rounded-xl font-bold text-slate-700 text-sm" />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-1">
-                                                <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Dénomination / Raison Sociale</Label>
-                                                <Input disabled value={entityInfo.nom} className="h-11 bg-slate-100 border-none rounded-xl font-bold text-slate-700 text-sm" />
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="space-y-1">
-                                                    <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Email de Contact</Label>
-                                                    <Input placeholder="email@exemple.com" value={email} onChange={e => setEmail(e.target.value)} className="h-11 bg-slate-50 border-slate-200 rounded-xl font-bold text-sm" />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Téléphone Principal</Label>
-                                                    <Input placeholder="+243..." value={telephone} onChange={e => setTelephone(e.target.value)} className="h-11 bg-slate-50 border-slate-200 rounded-xl font-bold text-sm" />
-                                                </div>
+                                                <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Email de Contact</Label>
+                                                <Input placeholder="email@exemple.com" value={email} onChange={e => setEmail(e.target.value)} className="h-11 bg-slate-50 border-slate-200 rounded-xl font-bold text-sm" />
                                             </div>
                                             <div className="space-y-1">
-                                                <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Nom du Représentant / Gérant <span className="text-red-500">*</span></Label>
-                                                <Input
-                                                    placeholder="Nom et prénom du représentant légal"
-                                                    value={representant}
-                                                    onChange={e => setRepresentant(e.target.value)}
-                                                    className={cn(
-                                                        "h-11 rounded-xl text-sm transition-all",
-                                                        representant.trim().length >= 2 ? "bg-slate-50 border-slate-200 font-bold text-slate-700" : "bg-slate-50 border-slate-200",
-                                                        representant.length > 0 && representant.trim().length < 2 && "border-amber-500 bg-amber-50/50"
-                                                    )}
-                                                />
-                                                {representant.length > 0 && representant.trim().length < 2 && (
-                                                    <p className="text-[9px] text-amber-600 font-medium ml-1">Minimum 2 caractères requis</p>
+                                                <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Téléphone Principal</Label>
+                                                <div className="flex h-11 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-[#0d2870]/20 transition-all">
+                                                    <div className="bg-slate-100 px-3 flex items-center border-r border-slate-200 text-slate-500 font-bold text-sm">
+                                                        +243
+                                                    </div>
+                                                    <Input
+                                                        placeholder="812 345 678"
+                                                        value={telephone.replace(/^\+243/, "")}
+                                                        onChange={e => {
+                                                            let val = e.target.value.replace(/\D/g, "");
+                                                            if (val.startsWith("0")) val = val.substring(1);
+                                                            if (val.length <= 9) {
+                                                                setTelephone("+243" + val);
+                                                            }
+                                                        }}
+                                                        className="flex-1 h-full border-none bg-transparent focus-visible:ring-0 font-bold text-sm"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Nom du Représentant / Gérant <span className="text-red-500">*</span></Label>
+                                            <Input
+                                                placeholder="Nom et prénom du représentant légal"
+                                                value={representant}
+                                                onChange={e => setRepresentant(e.target.value)}
+                                                className={cn(
+                                                    "h-11 rounded-xl text-sm transition-all",
+                                                    representant.trim().length >= 2 ? "bg-slate-50 border-slate-200 font-bold text-slate-700" : "bg-slate-50 border-slate-200",
+                                                    representant.length > 0 && representant.trim().length < 2 && "border-amber-500 bg-amber-50/50"
                                                 )}
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-4">
+                                            />
+                                        </div>
+
+                                        {hasEstablishment && (
+                                            <div className="grid grid-cols-2 gap-4 pt-2">
                                                 <div className="space-y-1">
                                                     <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Numéro Impôt (NIF)</Label>
                                                     <Input
@@ -568,9 +750,14 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                                             entityInfo.numeroImpot && !lockedFields.numeroImpot && !isNifValidFormat(entityInfo.numeroImpot) && "border-red-500 bg-red-50 text-red-900 focus-visible:ring-red-500"
                                                         )}
                                                     />
+                                                    {uniquenessErrors.nif && (
+                                                        <motion.p initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-[10px] text-red-500 font-bold uppercase mt-1">
+                                                            ⚠️ {uniquenessErrors.nif}
+                                                        </motion.p>
+                                                    )}
                                                     {entityInfo.numeroImpot && !lockedFields.numeroImpot && !isNifValidFormat(entityInfo.numeroImpot) && (
-                                                        <motion.p initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-[9px] text-red-500 font-black uppercase tracking-tight ml-1 leading-tight">
-                                                            A-Z suivi de 7 à 9 chiffres. Ex: A1006563
+                                                        <motion.p initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-[9px] text-red-600 font-black uppercase tracking-tight ml-1 leading-tight">
+                                                            Format invalide. Ex: A1234567B
                                                         </motion.p>
                                                     )}
                                                 </div>
@@ -586,31 +773,41 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                                             entityInfo.rccm && !lockedFields.rccm && !isRccmValidFormat(entityInfo.rccm) && "border-red-500 bg-red-50 text-red-900 focus-visible:ring-red-500"
                                                         )}
                                                     />
+                                                    {uniquenessErrors.rccm && (
+                                                        <motion.p initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-[10px] text-red-500 font-bold uppercase mt-1">
+                                                            ⚠️ {uniquenessErrors.rccm}
+                                                        </motion.p>
+                                                    )}
                                                     {entityInfo.rccm && !lockedFields.rccm && !isRccmValidFormat(entityInfo.rccm) && (
                                                         <motion.p initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-[9px] text-red-500 font-black uppercase tracking-tight ml-1 leading-tight">
-                                                            Format invalide. Ex: CD/KIN/RCCM:14-B-1561
+                                                            Format: CD/[CODE]/RCCM:YY-X-XXXX. Ex: CD/KIN/RCCM:14-B-1561
                                                         </motion.p>
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="space-y-1">
-                                                <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 italic">Identification Nationale (Id. Nat) <span className="text-red-500">*</span></Label>
-                                                <Input
-                                                    disabled={lockedFields.idNat}
-                                                    placeholder="Ex: 6-83-N 85264 K"
-                                                    value={entityInfo.idNat}
-                                                    onChange={e => setEntityInfo({ ...entityInfo, idNat: e.target.value.toUpperCase() })}
-                                                    className={cn("h-11 bg-slate-50 border-slate-200 rounded-xl text-sm transition-all",
-                                                        lockedFields.idNat && "bg-slate-100 border-none text-slate-700 font-bold",
-                                                        entityInfo.idNat && !lockedFields.idNat && !isIdNatValidFormat(entityInfo.idNat) && "border-red-500 bg-red-50 text-red-900 focus-visible:ring-red-500"
-                                                    )}
-                                                />
-                                                {entityInfo.idNat && !lockedFields.idNat && !isIdNatValidFormat(entityInfo.idNat) && (
-                                                    <motion.p initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-[9px] text-red-500 font-black uppercase tracking-tight ml-1 leading-tight">
-                                                        Format invalide. Ex: 6-83-N 85264 K
-                                                    </motion.p>
+                                        )}
+                                        <div className="space-y-1">
+                                            <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 italic">Identification Nationale (Id. Nat) <span className="text-red-500">*</span></Label>
+                                            <Input
+                                                disabled={lockedFields.idNat}
+                                                placeholder="Ex: 6-83-N 85264 K"
+                                                value={entityInfo.idNat}
+                                                onChange={e => setEntityInfo({ ...entityInfo, idNat: e.target.value.toUpperCase() })}
+                                                className={cn("h-11 bg-slate-50 border-slate-200 rounded-xl text-sm transition-all",
+                                                    lockedFields.idNat && "bg-slate-100 border-none text-slate-700 font-bold",
+                                                    entityInfo.idNat && !lockedFields.idNat && !isIdNatValidFormat(entityInfo.idNat) && "border-red-500 bg-red-50 text-red-900 focus-visible:ring-red-500"
                                                 )}
-                                            </div>
+                                            />
+                                            {uniquenessErrors.idNat && (
+                                                <motion.p initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-[10px] text-red-500 font-bold uppercase mt-1">
+                                                    ⚠️ {uniquenessErrors.idNat}
+                                                </motion.p>
+                                            )}
+                                            {entityInfo.idNat && !lockedFields.idNat && !isIdNatValidFormat(entityInfo.idNat) && (
+                                                <motion.p initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-[9px] text-red-600 font-black uppercase tracking-tight ml-1 leading-tight">
+                                                    Format invalide. Ex: 01-123-A1234B
+                                                </motion.p>
+                                            )}
                                         </div>
                                     </div>
 
@@ -774,9 +971,12 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                             </button>
                                         </div>
 
-                                        {/* Footer */}
-                                        <div className="bg-emerald-500 p-2 text-center shrink-0">
-                                            <p className="text-[8px] font-black text-white uppercase tracking-[0.15em]">Note Certifiée — RTNC RDC</p>
+                                        {/* Summarized Footer */}
+                                        <div className="bg-emerald-500 p-2 text-center shrink-0 relative overflow-hidden">
+                                            <div className="absolute inset-0 opacity-20 pointer-events-none flex items-center justify-center">
+                                                <div className="w-full h-full border-[10px] border-white/20 rounded-full scale-110" />
+                                            </div>
+                                            <p className="text-[8px] font-black text-white uppercase tracking-[0.15em] relative z-10">Note Certifiée — RTNC RDC</p>
                                         </div>
                                     </Card>
 
@@ -896,7 +1096,6 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                                                 </table>
                                                             </div>
                                                         </div>
-
                                                         {/* Totaux */}
                                                         <div className="space-y-2">
                                                             <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
@@ -942,67 +1141,63 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                     </AnimatePresence>
                                 </div>
                             )}
-
-
                         </motion.div>
-                    </AnimatePresence >
+                    </AnimatePresence>
 
                     {/* Patienter/Loader Modal */}
                     <AnimatePresence>
-                        {
-                            (isSubmitting || isConfiguringDashboard) && (
+                        {(isSubmitting || isConfiguringDashboard) && (
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0d2870]/10 backdrop-blur-xl"
+                            >
                                 <motion.div
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0d2870]/10 backdrop-blur-xl"
+                                    initial={{ scale: 0.9, y: 20 }}
+                                    animate={{ scale: 1, y: 0 }}
+                                    className="bg-white p-10 rounded-[30px] shadow-2xl text-center space-y-6 max-w-xs w-full mx-4 border border-slate-100"
                                 >
-                                    <motion.div
-                                        initial={{ scale: 0.9, y: 20 }}
-                                        animate={{ scale: 1, y: 0 }}
-                                        className="bg-white p-10 rounded-[30px] shadow-2xl text-center space-y-6 max-w-xs w-full mx-4 border border-slate-100"
-                                    >
-                                        <div className="relative w-28 h-28 mx-auto">
-                                            <svg className="w-full h-full rotate-[-90deg]">
-                                                <circle cx="56" cy="56" r="52" className="stroke-slate-100 fill-none stroke-[7]" />
-                                                <motion.circle
-                                                    cx="56" cy="56" r="52"
-                                                    className="stroke-[#0d2870] fill-none stroke-[7]"
-                                                    initial={{ strokeDasharray: "0, 326" }}
-                                                    animate={{ strokeDasharray: "300, 326" }}
-                                                    transition={{ duration: 1.5, ease: "easeInOut" }}
-                                                    style={{ strokeLinecap: "round" }}
+                                    <div className="relative w-28 h-28 mx-auto">
+                                        <svg className="w-full h-full rotate-[-90deg]">
+                                            <circle cx="56" cy="56" r="52" className="stroke-slate-100 fill-none stroke-[7]" />
+                                            <motion.circle
+                                                cx="56" cy="56" r="52"
+                                                className="stroke-[#0d2870] fill-none stroke-[7]"
+                                                initial={{ strokeDasharray: "0, 326" }}
+                                                animate={{ strokeDasharray: "300, 326" }}
+                                                transition={{ duration: 1.5, ease: "easeInOut" }}
+                                                style={{ strokeLinecap: "round" }}
+                                            />
+                                        </svg>
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                            <Zap className="w-8 h-8 text-[#0d2870] animate-pulse" />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <h3 className="text-xl font-black text-slate-900 tracking-tight">Veuillez patienter</h3>
+                                        <p className="text-sm text-slate-500 font-medium px-2">
+                                            {isConfiguringDashboard
+                                                ? "Nous configurons votre tableau de bord personnel..."
+                                                : "Nous effectuons le calcul de votre redevance annuelle..."
+                                            }
+                                        </p>
+                                        <div className="flex justify-center gap-1 mt-3">
+                                            {[0, 1, 2].map((i) => (
+                                                <motion.div
+                                                    key={i}
+                                                    animate={{ opacity: [0.3, 1, 0.3], y: [0, -3, 0] }}
+                                                    transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
+                                                    className="w-1.5 h-1.5 rounded-full bg-[#0d2870]"
                                                 />
-                                            </svg>
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                                <Zap className="w-8 h-8 text-[#0d2870] animate-pulse" />
-                                            </div>
+                                            ))}
                                         </div>
-                                        <div className="space-y-2">
-                                            <h3 className="text-xl font-black text-slate-900 tracking-tight">Veuillez patienter</h3>
-                                            <p className="text-sm text-slate-500 font-medium px-2">
-                                                {isConfiguringDashboard
-                                                    ? "Nous configurons votre tableau de bord personnel..."
-                                                    : "Nous effectuons le calcul de votre redevance annuelle..."
-                                                }
-                                            </p>
-                                            <div className="flex justify-center gap-1 mt-3">
-                                                {[0, 1, 2].map((i) => (
-                                                    <motion.div
-                                                        key={i}
-                                                        animate={{ opacity: [0.3, 1, 0.3], y: [0, -3, 0] }}
-                                                        transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                                                        className="w-1.5 h-1.5 rounded-full bg-[#0d2870]"
-                                                    />
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </motion.div>
+                                    </div>
                                 </motion.div>
-                            )
-                        }
-                    </AnimatePresence >
-                </div >
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
 
                 {/* Navigation - Compact */}
                 {step < 4 ? (
@@ -1026,8 +1221,8 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                         !commune
                                     )) ||
                                     (step === 2 && (
-                                        activities.length === 0 ||
-                                        (activities.includes("autre") && !autreActivite) ||
+                                        (hasEstablishment && activities.length === 0) ||
+                                        (hasEstablishment && activities.includes("autre") && !autreActivite) ||
                                         (entityInfo.numeroImpot && !lockedFields.numeroImpot && !isNifValidFormat(entityInfo.numeroImpot)) ||
                                         (entityInfo.rccm && !lockedFields.rccm && !isRccmValidFormat(entityInfo.rccm)) ||
                                         (entityInfo.idNat && !lockedFields.idNat && !isIdNatValidFormat(entityInfo.idNat))
@@ -1063,13 +1258,12 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                         </button>
                     </div>
                 )}
-            </div >
+            </div>
 
             {/* Map Slide-Over */}
             < MapSlideOver
                 isOpen={isMapOpen}
-                onClose={() => setIsMapOpen(false)
-                }
+                onClose={() => setIsMapOpen(false)}
                 onConfirm={handleMapConfirm}
                 initialAddress={adressePhysique}
                 selectedProvinceName={provinces.find(p => p.id === province)?.nom}

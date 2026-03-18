@@ -73,18 +73,21 @@ export async function updateDeviceCounts(data: z.infer<typeof UpdateDevicesSchem
 
             if (!category) throw new Error("Catégorie géographique introuvable pour le calcul du tarif");
 
-            // Fetch pricing rule
-            const [rule] = await tx
+            // Fetch pricing rules
+            const rules = await tx
                 .select()
                 .from(taxationRules)
                 .where(and(
                     eq(taxationRules.category, category as any),
                     eq(taxationRules.entityType, profile.sousTypePm as any)
-                ))
-                .limit(1);
+                ));
 
-            if (!rule) throw new Error("Règle de taxation introuvable pour votre profil");
-            const pu = Number(rule.price);
+            const tvRule = rules.find(r => r.categorieAppareil === "Téléviseurs");
+            const radioRule = rules.find(r => r.categorieAppareil === "Radios") || tvRule;
+
+            if (!tvRule) throw new Error("Règle de taxation TV introuvable");
+            const puTv = Number(tvRule.price);
+            const puRadio = radioRule ? Number(radioRule.price) : puTv;
 
             // Update TV Line
             const tvLine = lines.find(l => l.categorieAppareil === "Téléviseurs");
@@ -92,7 +95,8 @@ export async function updateDeviceCounts(data: z.infer<typeof UpdateDevicesSchem
                 await tx.update(lignesDeclaration)
                     .set({
                         nombre: validated.nbTv,
-                        montantLigne: (validated.nbTv * pu).toString(),
+                        tarifUnitaire: puTv.toString(),
+                        montantLigne: (validated.nbTv * puTv).toString(),
                     })
                     .where(eq(lignesDeclaration.id, tvLine.id));
             } else if (validated.nbTv > 0) {
@@ -100,23 +104,20 @@ export async function updateDeviceCounts(data: z.infer<typeof UpdateDevicesSchem
                     declarationId: latestDecl.id,
                     categorieAppareil: "Téléviseurs",
                     nombre: validated.nbTv,
-                    tarifUnitaire: pu.toString(),
-                    montantLigne: (validated.nbTv * pu).toString(),
+                    tarifUnitaire: puTv.toString(),
+                    montantLigne: (validated.nbTv * puTv).toString(),
                 });
             }
 
             // Update Radio Line
             const radioLine = lines.find(l => l.categorieAppareil === "Radios");
-            const hasTv = validated.nbTv > 0;
-            // Following business logic: if TV exists, Radio is recorded but not factured (pu=0 logic or priority)
-            // In completeIdentification, totalUSD only counts one type if prioritizing.
-
             if (radioLine) {
                 await tx.update(lignesDeclaration)
                     .set({
                         nombre: validated.nbRadio,
-                        montantLigne: (hasTv ? 0 : (validated.nbRadio * pu)).toString(),
-                        remarque: hasTv ? "Utilisé comme base mais non facturé (TV prioritaire)" : null
+                        tarifUnitaire: puRadio.toString(),
+                        montantLigne: (validated.nbRadio * puRadio).toString(),
+                        remarque: null
                     })
                     .where(eq(lignesDeclaration.id, radioLine.id));
             } else if (validated.nbRadio > 0) {
@@ -124,16 +125,13 @@ export async function updateDeviceCounts(data: z.infer<typeof UpdateDevicesSchem
                     declarationId: latestDecl.id,
                     categorieAppareil: "Radios",
                     nombre: validated.nbRadio,
-                    tarifUnitaire: pu.toString(),
-                    montantLigne: (hasTv ? 0 : (validated.nbRadio * pu)).toString(),
-                    remarque: hasTv ? "Utilisé comme base mais non facturé (TV prioritaire)" : undefined
+                    tarifUnitaire: puRadio.toString(),
+                    montantLigne: (validated.nbRadio * puRadio).toString(),
                 });
             }
 
             // Recalculate Total Note Amount (USD)
-            const calculatedTvQty = validated.nbTv > 0 ? validated.nbTv : 0;
-            const calculatedRadioQty = validated.nbTv > 0 ? 0 : (validated.nbRadio > 0 ? validated.nbRadio : 0);
-            const totalUSD = (calculatedTvQty + calculatedRadioQty) * pu;
+            const totalUSD = (validated.nbTv * puTv) + (validated.nbRadio * puRadio);
 
             // Update Note de Taxation associated with this declaration
             const [note] = await tx

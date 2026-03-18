@@ -32,11 +32,19 @@ const PDFDownloadButton = dynamic(
     { ssr: false, loading: () => <div className="h-12 w-full bg-slate-100 animate-pulse rounded-lg" /> }
 );
 
+import { updateApplianceCount } from "@/app/actions/appliance-revision";
+import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Tv, Radio as RadioIcon, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+
 interface Note {
     id: string;
     numeroNote: string | null;
     exercice: number;
     montantTotalDu: string;
+    montantPaye: string | null;
+    solde: string | null;
     statut: string | null;
     dateEmission: string | null;
     dateEcheance: string | null;
@@ -46,6 +54,7 @@ interface Note {
     montantReduction: string;
     reductionPct: string | null;
     montantPenalites: string;
+    lignes?: any[];
 }
 
 interface TaxationNotesListProps {
@@ -58,6 +67,10 @@ export function TaxationNotesList({ notes, assujetti, qrDataMap }: TaxationNotes
     const [selectedNote, setSelectedNote] = useState<Note | null>(null);
     const [filterYear, setFilterYear] = useState<string>("all");
     const [filterStatus, setFilterStatus] = useState<string>("all");
+    const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
+    const [revisionType, setRevisionType] = useState({ tv: 0, radio: 0 });
+    const [isUpdating, setIsUpdating] = useState(false);
+    const router = useRouter();
 
     const years = Array.from(new Set(notes.map(n => n.exercice))).sort((a, b) => b - a);
 
@@ -75,6 +88,8 @@ export function TaxationNotesList({ notes, assujetti, qrDataMap }: TaxationNotes
         switch (statut) {
             case "payee":
                 return "bg-emerald-500 text-white border-emerald-600";
+            case "partiellement_payee":
+                return "bg-blue-500 text-white border-blue-600";
             case "en_retard":
                 return "bg-red-600 text-white border-red-700";
             case "emise":
@@ -87,10 +102,35 @@ export function TaxationNotesList({ notes, assujetti, qrDataMap }: TaxationNotes
     const getStatusLabel = (statut: string | null) => {
         switch (statut) {
             case "payee": return "CERTIFIÉE / PAYÉE";
+            case "partiellement_payee": return "PAIEMENT PARTIEL";
             case "en_retard": return "URGENT / EN RETARD";
             case "emise": return "ATTENTE PAIEMENT";
             case "brouillon": return "BROUILLON";
             default: return statut?.toUpperCase() || "INCONNU";
+        }
+    };
+
+    const handleUpdateAppliances = async () => {
+        if (!selectedNote) return;
+        setIsUpdating(true);
+        try {
+            const res = await updateApplianceCount({
+                noteId: selectedNote.id,
+                nbTv: revisionType.tv,
+                nbRadio: revisionType.radio
+            });
+
+            if (res.success) {
+                toast.success("Vos appareils ont été mis à jour et le solde recalculé.");
+                setIsRevisionModalOpen(false);
+                router.refresh(); // Refresh to get the updated note data
+            } else {
+                toast.error(res.error || "Une erreur est survenue.");
+            }
+        } catch (error) {
+            toast.error("Erreur de communication avec le serveur.");
+        } finally {
+            setIsUpdating(false);
         }
     };
 
@@ -170,15 +210,28 @@ export function TaxationNotesList({ notes, assujetti, qrDataMap }: TaxationNotes
                                     </p>
                                 </div>
 
-                                <div className="mt-auto pt-6 border-t border-slate-100 flex items-end justify-between">
-                                    <div>
-                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">MONTANT CERTIFIÉ</p>
-                                        <p className="text-2xl font-black text-[#0d2870] tracking-tighter">
-                                            {formatCurrency(note.montantTotalDu)}
-                                        </p>
+                                <div className="mt-auto pt-6 border-t border-slate-100">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="space-y-1">
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">RESTE À PAYER</p>
+                                            <p className="text-xl font-black text-red-600 tracking-tighter">
+                                                {formatCurrency(note.solde ?? note.montantTotalDu)}
+                                            </p>
+                                        </div>
+                                        <div className="text-right space-y-1">
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">DÉJÀ RÉGLÉ</p>
+                                            <p className="text-sm font-bold text-emerald-600 tracking-tight">
+                                                {formatCurrency(note.montantPaye ?? 0)}
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div className="w-10 h-10 rounded-lg bg-slate-900 text-white flex items-center justify-center transition-all group-hover/card:bg-red-600 shadow-none">
-                                        <ChevronRight className="w-6 h-6" />
+                                    
+                                    {/* Small Progress Bar */}
+                                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
+                                        <div 
+                                            className="h-full bg-emerald-500 transition-all duration-500" 
+                                            style={{ width: `${Math.min(100, (Number(note.montantPaye || 0) / Number(note.montantTotalDu)) * 100)}%` }}
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -255,9 +308,9 @@ export function TaxationNotesList({ notes, assujetti, qrDataMap }: TaxationNotes
                                         </div>
                                         <div className="space-y-1">
                                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em]">Secured by RTNC</p>
-                                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">REDEVANCE TOTALE CERTIFIÉE</p>
-                                            <p className="text-4xl font-black text-[#0d2870] tracking-tighter">
-                                                {formatCurrency(selectedNote.montantTotalDu)}
+                                            <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">SOLDE ACTUEL À RÉGLER</p>
+                                            <p className="text-4xl font-black text-red-600 tracking-tighter">
+                                                {formatCurrency(selectedNote.solde ?? selectedNote.montantTotalDu)}
                                             </p>
                                         </div>
                                     </div>
@@ -282,15 +335,39 @@ export function TaxationNotesList({ notes, assujetti, qrDataMap }: TaxationNotes
                                         </div>
                                     </div>
 
-                                    {/* Breakdown Section - Dark Blue */}
+                                    {/* Breakdown Section - Dark Blue / Improved with device types */}
                                     <div className="bg-[#0d2870] p-5 space-y-3">
-                                        <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.15em] text-white/50">
-                                            <span>PRINCIPAL / NET</span>
-                                            <span className="text-white">{formatCurrency(selectedNote.montantNet)}</span>
+                                        <div className="space-y-2 mb-4">
+                                            {selectedNote.lignes?.map((l: any) => (
+                                                <div key={l.id} className="flex justify-between text-[10px] font-bold text-white/70 uppercase">
+                                                    <span className="flex items-center gap-2">
+                                                        {l.categorieAppareil.toLowerCase().includes('tv') ? <Tv className="w-3 h-3" /> : <RadioIcon className="w-3 h-3" />}
+                                                        {l.nombre} x {l.categorieAppareil}
+                                                    </span>
+                                                    <span>{formatCurrency(l.montantLigne)}</span>
+                                                </div>
+                                            ))}
+                                            {(!selectedNote.lignes || selectedNote.lignes.length === 0) && (
+                                                <div className="flex justify-between text-[10px] font-bold text-white/70 uppercase">
+                                                    <span>REDEVANCE FORFAITAIRE</span>
+                                                    <span>{formatCurrency(selectedNote.montantTotalDu)}</span>
+                                                </div>
+                                            )}
                                         </div>
-                                        <div className="pt-3 border-t border-white/10 flex justify-between items-center">
-                                            <span className="text-[10px] font-black text-yellow-400 uppercase tracking-[0.2em]">TOTAL GÉNÉRAL DÛ</span>
-                                            <span className="text-xl font-black text-white tracking-tighter">{formatCurrency(selectedNote.montantTotalDu)}</span>
+
+                                        <div className="pt-3 border-t border-white/10 space-y-2">
+                                            <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.15em] text-white/50">
+                                                <span>TOTAL CERTIFIÉ</span>
+                                                <span className="text-white">{formatCurrency(selectedNote.montantTotalDu)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.15em] text-white/50">
+                                                <span>DÉJÀ PAYÉ</span>
+                                                <span className="text-emerald-400">{formatCurrency(selectedNote.montantPaye ?? 0)}</span>
+                                            </div>
+                                            <div className="pt-2 flex justify-between items-center">
+                                                <span className="text-[10px] font-black text-yellow-400 uppercase tracking-[0.2em]">RESTE À PAYER (SOLDE)</span>
+                                                <span className="text-xl font-black text-white tracking-tighter">{formatCurrency(selectedNote.solde ?? selectedNote.montantTotalDu)}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -321,21 +398,117 @@ export function TaxationNotesList({ notes, assujetti, qrDataMap }: TaxationNotes
                                             commune: "Kinshasa",
                                             quartier: ""
                                         },
-                                        items: [
+                                        items: selectedNote.lignes?.map((l: any) => ({
+                                            label: l.categorieAppareil,
+                                            qty: l.nombre,
+                                            pu: Number(l.tarifUnitaire)
+                                        })) || [
                                             { label: "REDEVANCE AUDIOVISUELLE", qty: 1, pu: Number(selectedNote.montantTotalDu) }
                                         ],
                                         qrData: qrDataMap[selectedNote.id] || ""
                                     }}
                                 />
                                 {selectedNote.statut !== "payee" && (
-                                    <Link href="/assujetti/redevance/paiement" className="block w-full">
-                                        <Button
-                                            className="w-full h-12 rounded-lg bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] text-[10px] gap-2 shadow-none border-none transition-all"
-                                        >
-                                            <Receipt className="w-4 h-4" /> RÉGLER LA NOTE
-                                        </Button>
-                                    </Link>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <Link href="/assujetti/redevance/paiement" className="block">
+                                            <Button
+                                                className="w-full h-12 rounded-lg bg-slate-900 border-2 border-slate-900 text-white hover:bg-white hover:text-slate-900 font-black uppercase tracking-[0.1em] text-[9px] gap-2 transition-all shadow-none"
+                                            >
+                                                Payer une tranche
+                                            </Button>
+                                        </Link>
+                                        <Link href="/assujetti/redevance/paiement" className="block">
+                                            <Button
+                                                className="w-full h-12 rounded-lg bg-red-600 border-2 border-red-600 text-white hover:bg-white hover:text-red-600 font-black uppercase tracking-[0.1em] text-[9px] gap-2 transition-all shadow-none"
+                                            >
+                                                Tout régler
+                                            </Button>
+                                        </Link>
+                                    </div>
                                 )}
+                                <Button
+                                    variant="outline"
+                                    className="w-full h-12 rounded-lg border-2 border-slate-200 text-slate-600 hover:border-[#0d2870] hover:text-[#0d2870] font-black uppercase tracking-[0.1em] text-[10px] gap-2 transition-all shadow-none"
+                                    onClick={() => {
+                                        setRevisionType({ tv: 0, radio: 0 }); // Ideally we'd fetch current counts, but for now we set 0 or ask user to re-declare
+                                        setIsRevisionModalOpen(true);
+                                    }}
+                                >
+                                    Actualiser mes appareils
+                                </Button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Revision Modal */}
+            <AnimatePresence>
+                {isRevisionModalOpen && (
+                    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsRevisionModalOpen(false)}
+                            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                        />
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            className="bg-white w-full max-w-sm rounded-2xl shadow-2xl relative z-10 overflow-hidden border-t-4 border-[#0d2870]"
+                        >
+                            <div className="p-6">
+                                <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter mb-1">Mise à jour du parc</h3>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-6">Redéclarez vos appareils pour {selectedNote?.exercice}</p>
+                                
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Nombre de Téléviseurs</Label>
+                                        <div className="relative">
+                                            <Tv className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                            <Input 
+                                                type="number" 
+                                                min="0"
+                                                value={revisionType.tv}
+                                                onChange={(e) => setRevisionType(prev => ({ ...prev, tv: parseInt(e.target.value) || 0 }))}
+                                                className="pl-10 h-12 font-black transition-all focus:ring-[#0d2870] border-slate-200"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Nombre de Radios</Label>
+                                        <div className="relative">
+                                            <RadioIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                            <Input 
+                                                type="number" 
+                                                min="0"
+                                                value={revisionType.radio}
+                                                onChange={(e) => setRevisionType(prev => ({ ...prev, radio: parseInt(e.target.value) || 0 }))}
+                                                className="pl-10 h-12 font-black transition-all focus:ring-[#0d2870] border-slate-200"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-8 flex gap-3">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => setIsRevisionModalOpen(false)}
+                                        className="flex-1 h-12 rounded-xl border-2 border-slate-100 font-black uppercase tracking-[0.1em] text-[10px]"
+                                    >
+                                        Annuler
+                                    </Button>
+                                    <Button
+                                        onClick={handleUpdateAppliances}
+                                        disabled={isUpdating}
+                                        className="flex-1 h-12 rounded-xl bg-[#0d2870] text-white font-black uppercase tracking-[0.1em] text-[10px]"
+                                    >
+                                        {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Actualiser"}
+                                    </Button>
+                                </div>
                             </div>
                         </motion.div>
                     </div>

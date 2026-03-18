@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { appUsers, assujettis, adminUsers, roles, userRoles } from "@/db/schema";
+import { appUsers, assujettis, adminUsers, roles, userRoles, onboardingProgress } from "@/db/schema";
 import { eq, or } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -13,8 +13,12 @@ const registerSchema = z.object({
     password: z.string().min(8),
     nomPrenom: z.string().min(2),
     telephone: z.string().optional(),
-    adresseSiege: z.string().min(5),
-    commune: z.string().min(2),
+    // Address fields
+    numero: z.string().min(1, "Numéro requis").optional().or(z.literal("")),
+    adresseSiege: z.string().min(5, "Adresse requise"),
+    quartier: z.string().min(2, "Quartier requis").optional().or(z.literal("")),
+    commune: z.string().min(2, "Commune requise"),
+    
     accountType: z.enum(["particulier", "entreprise"]),
     // DRC Administrative IDs - Relaxed patterns
     nif: z.string().regex(/^[A-Z0-9]{5,15}$/, "Format NIF invalide (Ex: A1006563)").optional().or(z.literal("")),
@@ -59,6 +63,8 @@ export async function registerUser(formData: z.infer<typeof registerSchema>) {
         }
 
         // 5. Create Assujetti Profile
+        const fullAdresse = `${validatedData.numero ? validatedData.numero + " " : ""}${validatedData.adresseSiege}, ${validatedData.quartier ? validatedData.quartier + ", " : ""}${validatedData.commune}`;
+        
         await db.insert(assujettis).values({
             userId: newUser.id,
             typePersonne: validatedData.accountType === "particulier" ? "pp" : "pm",
@@ -66,17 +72,31 @@ export async function registerUser(formData: z.infer<typeof registerSchema>) {
             nif: validatedData.nif,
             rccm: validatedData.rccm,
             representantLegal: validatedData.representantLegal,
-            adresseSiege: validatedData.adresseSiege,
+            adresseSiege: fullAdresse,
             // Defaulting zone to urbaine for now as per simple setup, could be dynamic later
             zoneTarifaire: "urbaine",
             email: validatedData.email,
             telephonePrincipal: validatedData.telephone,
         });
 
-        // 6. Send Welcome Email
+        // 6. Initialize Onboarding Progress with registration address
+        await db.insert(onboardingProgress).values({
+            userId: newUser.id,
+            status: "pending",
+            lastStep: 0,
+            step1Data: {
+                adressePhysique: validatedData.adresseSiege,
+                numero: validatedData.numero,
+                quartier: validatedData.quartier,
+                commune: validatedData.commune,
+                // We store these as strings, the wizard will try to match them with geographies later
+            }
+        });
+
+        // 7. Send Welcome Email
         await sendWelcomeEmail(validatedData.email, validatedData.nomPrenom);
 
-        // 7. Auto-create full session for immediate login
+        // 8. Auto-create full session for immediate login
         await createFullSession(newUser.id, roleName || "assujetti", false);
 
         return { success: true };

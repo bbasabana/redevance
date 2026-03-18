@@ -213,7 +213,7 @@ export function LoginForm({ hideSignUp = false }: { hideSignUp?: boolean }) {
         >
           Vous n'avez pas de compte ?{" "}
           <Link href="/panel/signup" className="text-primary font-bold hover:underline">
-            S'inscrire
+            S'enregistrer
           </Link>
         </motion.p>
       )}

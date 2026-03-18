@@ -35,6 +35,8 @@ export function RegisterForm() {
         password: "",
         telephone: "",
         adresse: "",
+        numero: "",
+        quartier: "",
         commune: "",
         nif: "",
         // Individual specific
@@ -54,8 +56,8 @@ export function RegisterForm() {
             case 0: // Type Selection
                 return true;
             case 1: // Informations
-                const nifRegex = /^[A-Z0-9]{5,15}$/;
-                const rccmRegex = /^[A-Z0-9\s'.:\/-]{5,40}$/;
+                const nifRegex = /^[A-Z]\d{7,9}$/;
+                const rccmRegex = /^[A-Z]{2}\/[A-Z0-9\s'’-]+(\/[A-Z0-9\s'’-]+)?\/RCCM:\d{2}-[A-Z]-\d{4,6}$/;
 
                 if (accountType === "particulier") {
                     if (formData.nif.trim() && !nifRegex.test(formData.nif)) {
@@ -90,8 +92,16 @@ export function RegisterForm() {
                     toast.error("Veuillez entrer un numéro de téléphone.", { className: "text-red-500" });
                     return false;
                 }
+                if (!formData.numero.trim()) {
+                    toast.error("Veuillez entrer un numéro de parcelle.", { className: "text-red-500" });
+                    return false;
+                }
                 if (!formData.adresse.trim()) {
                     toast.error("Veuillez entrer une adresse.", { className: "text-red-500" });
+                    return false;
+                }
+                if (!formData.quartier.trim()) {
+                    toast.error("Veuillez entrer un quartier.", { className: "text-red-500" });
                     return false;
                 }
                 if (!formData.commune.trim()) {
@@ -133,9 +143,11 @@ export function RegisterForm() {
                 const result = await registerUser({
                     email: formData.email,
                     password: formData.password,
-                    nomPrenom: accountType === "particulier" ? formData.nomComplet : (formData.representantLegal || formData.raisonSociale || ""),
+                    nomPrenom: formData.nomComplet,
                     telephone: formData.telephone,
+                    numero: formData.numero,
                     adresseSiege: formData.adresse,
+                    quartier: formData.quartier,
                     commune: formData.commune,
                     accountType,
                     nif: formData.nif,
@@ -373,33 +385,67 @@ export function RegisterForm() {
 
                                 {step === 2 && (
                                     <div className="space-y-4">
-                                        <div className="space-y-2">
-                                            <Label>Adresse physique</Label>
-                                            <Input
-                                                placeholder="Ex: 123 Blvd du 30 Juin"
-                                                value={formData.adresse}
-                                                onChange={(e) => updateFormData("adresse", e.target.value)}
-                                            />
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <Label className="text-slate-700 font-bold ml-1 text-xs uppercase tracking-wider italic">Numéro <span className="text-red-500">*</span></Label>
+                                                <Input
+                                                    placeholder="Ex: 47 / A"
+                                                    value={formData.numero}
+                                                    onChange={(e) => updateFormData("numero", e.target.value)}
+                                                    className="h-11 sm:h-12 bg-white/50 border-slate-200 focus:border-primary/50 focus:ring-primary/20 transition-all rounded-xl shadow-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-slate-700 font-bold ml-1 text-xs uppercase tracking-wider italic">Adresse Physique <span className="text-red-500">*</span></Label>
+                                                <Input
+                                                    placeholder="Ex: Ave de l'Equateur"
+                                                    value={formData.adresse}
+                                                    onChange={(e) => updateFormData("adresse", e.target.value)}
+                                                    className="h-11 sm:h-12 bg-white/50 border-slate-200 focus:border-primary/50 focus:ring-primary/20 transition-all rounded-xl shadow-sm"
+                                                />
+                                            </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-2">
-                                                <Label>Commune</Label>
+                                                <Label className="text-slate-700 font-bold ml-1 text-xs uppercase tracking-wider italic">Quartier <span className="text-red-500">*</span></Label>
+                                                <Input
+                                                    placeholder="Ex: Jolimont"
+                                                    value={formData.quartier}
+                                                    onChange={(e) => updateFormData("quartier", e.target.value)}
+                                                    className="h-11 sm:h-12 bg-white/50 border-slate-200 focus:border-primary/50 focus:ring-primary/20 transition-all rounded-xl shadow-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-slate-700 font-bold ml-1 text-xs uppercase tracking-wider italic">Commune <span className="text-red-500">*</span></Label>
                                                 <Input
                                                     placeholder="Ex: Gombe"
                                                     value={formData.commune}
                                                     onChange={(e) => updateFormData("commune", e.target.value)}
-                                                />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label>Téléphone</Label>
-                                                <Input
-                                                    placeholder="+243"
-                                                    value={formData.telephone}
-                                                    onChange={(e) => updateFormData("telephone", e.target.value)}
+                                                    className="h-11 sm:h-12 bg-white/50 border-slate-200 focus:border-primary/50 focus:ring-primary/20 transition-all rounded-xl shadow-sm"
                                                 />
                                             </div>
                                         </div>
-                                    </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-slate-700 font-bold ml-1 text-xs uppercase tracking-wider">Téléphone</Label>
+                                                <div className="flex h-11 sm:h-12 bg-white/50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+                                                    <div className="bg-slate-100/50 px-3 flex items-center border-r border-slate-200 text-slate-500 font-bold text-sm">
+                                                        +243
+                                                    </div>
+                                                    <Input
+                                                        placeholder="812 345 678"
+                                                        value={formData.telephone.replace(/^\+243/, "")}
+                                                        onChange={(e) => {
+                                                            let val = e.target.value.replace(/\D/g, "");
+                                                            if (val.startsWith("0")) val = val.substring(1);
+                                                            if (val.length <= 9) {
+                                                                updateFormData("telephone", "+243" + val);
+                                                            }
+                                                        }}
+                                                        className="flex-1 h-full border-none bg-transparent focus-visible:ring-0 font-bold text-sm"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
                                 )}
 
                                 {step === 3 && (

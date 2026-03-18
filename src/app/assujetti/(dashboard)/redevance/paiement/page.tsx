@@ -14,12 +14,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { getPaymentDetails } from "@/app/actions/taxation";
+import { submitPartialPayment } from "@/app/actions/payments";
 import { TaxationQRCode } from "@/components/assujetti/TaxationQRCode";
 import Image from "next/image";
 
 type PaymentMethod = "mobile_money" | "card" | null;
 type MobileProvider = "mpesa" | "airtel" | "orange" | null;
-type Step = "method" | "provider" | "details" | "simulation" | "success";
+type PaymentType = "full" | "partial";
+type Step = "method" | "type" | "provider" | "details" | "simulation" | "success";
 
 const PROVIDERS = [
     { id: "mpesa", name: "M-Pesa", color: "bg-red-600", lightBg: "bg-red-50", icon: "/images/mpesa.png" },
@@ -33,9 +35,12 @@ export default function PaymentPage() {
     const [data, setData] = useState<any>(null);
     const [step, setStep] = useState<Step>("method");
     const [method, setMethod] = useState<PaymentMethod>(null);
+    const [paymentType, setPaymentType] = useState<PaymentType>("full");
+    const [partialAmount, setPartialAmount] = useState("");
     const [provider, setProvider] = useState<MobileProvider>(null);
     const [phone, setPhone] = useState("");
     const [isSimulating, setIsSimulating] = useState(false);
+    const [lastTransactionRef, setLastTransactionRef] = useState("");
 
     useEffect(() => {
         getPaymentDetails().then(res => {
@@ -58,24 +63,59 @@ export default function PaymentPage() {
     }
 
     const handleNext = () => {
-        if (step === "method" && method === "mobile_money") setStep("provider");
+        if (step === "method" && method === "mobile_money") setStep("type");
         else if (step === "method" && method === "card") toast.info("Paiement par carte bientôt disponible");
+        else if (step === "type") setStep("provider");
         else if (step === "provider") setStep("details");
     };
 
-    const runSimulation = () => {
+    const handlePayment = async () => {
         if (!phone || phone.length < 9) {
             toast.error("Veuillez saisir un numéro de téléphone valide");
             return;
         }
+
+        const amount = paymentType === "full" ? Number(data.note.solde) : Number(partialAmount);
+        if (isNaN(amount) || amount <= 0) {
+            toast.error("Veuillez saisir un montant valide");
+            return;
+        }
+
+        if (paymentType === "partial" && amount >= Number(data.note.solde)) {
+            toast.error("Le montant partiel doit être inférieur au solde total");
+            return;
+        }
+
         setIsSimulating(true);
         setStep("simulation");
 
-        setTimeout(() => {
-            setStep("success");
+        try {
+            // Real Server Action Call
+            const res = await submitPartialPayment({
+                noteTaxationId: data.note.id,
+                montant: amount,
+                canal: (provider === "mpesa" ? "mtn_money" : provider === "airtel" ? "airtel_money" : "orange_money") as any, // Mapping providers to canal
+                referenceTransaction: "TX-" + Math.random().toString(36).substring(7).toUpperCase()
+            });
+
+            if (res.success) {
+                // Wait for simulation feel
+                setTimeout(() => {
+                    setLastTransactionRef("TX-" + Math.random().toString(36).substring(7).toUpperCase());
+                    setStep("success");
+                    setIsSimulating(false);
+                    toast.success("Demande de paiement envoyée");
+                }, 3000);
+            } else {
+                toast.error(res.error || "Erreur lors de l'initiation du paiement");
+                setIsSimulating(false);
+                setStep("details");
+            }
+        } catch (error) {
+            toast.error("Erreur de connexion");
             setIsSimulating(false);
-            toast.success("Paiement simulé avec succès !");
-        }, 4000);
+            setStep("details");
+        }
     };
 
     const containerVariants = {
@@ -253,6 +293,86 @@ export default function PaymentPage() {
                         </motion.div>
                     )}
 
+                    {step === "type" && (
+                        <motion.div key="type" variants={containerVariants} initial="hidden" animate="visible" exit="exit" className="space-y-6">
+                            <div className="flex items-center justify-between pb-2 border-b-2 border-slate-900/5">
+                                <button onClick={() => setStep("method")} className="p-2 hover:bg-slate-100 rounded-lg transition-colors group">
+                                    <ArrowLeft className="w-5 h-5 text-slate-400 group-hover:text-[#0d2870]" />
+                                </button>
+                                <h3 className="text-[10px] font-black text-slate-800 uppercase tracking-[0.3em] text-center flex-1">Échelonnement du Paiement</h3>
+                                <div className="w-9" />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <button
+                                    onClick={() => setPaymentType("full")}
+                                    className={cn(
+                                        "flex flex-col items-center p-8 rounded-lg border-2 transition-all relative overflow-hidden group h-full text-center",
+                                        paymentType === "full" ? "border-[#0d2870] bg-[#0d2870]/5 shadow-technical" : "border-slate-100 bg-white hover:border-slate-200"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "w-12 h-12 rounded-lg flex items-center justify-center mb-4 transition-all",
+                                        paymentType === "full" ? "bg-[#0d2870] text-white scale-110" : "bg-slate-50 text-slate-400"
+                                    )}>
+                                        <Banknote className="w-6 h-6" />
+                                    </div>
+                                    <span className="text-[11px] font-black uppercase tracking-widest text-slate-900">Totalité (100%)</span>
+                                    <p className="text-[8px] text-slate-400 font-bold mt-2 uppercase tracking-tight">Règlement intégral immédiat</p>
+                                    <p className="text-lg font-black text-[#0d2870] mt-3">{Number(data.note.solde).toLocaleString()} USD</p>
+                                </button>
+
+                                <button
+                                    onClick={() => setPaymentType("partial")}
+                                    className={cn(
+                                        "flex flex-col items-center p-8 rounded-lg border-2 transition-all relative overflow-hidden group h-full text-center",
+                                        paymentType === "partial" ? "border-[#0d2870] bg-[#0d2870]/5 shadow-technical" : "border-slate-100 bg-white hover:border-slate-200"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "w-12 h-12 rounded-lg flex items-center justify-center mb-4 transition-all",
+                                        paymentType === "partial" ? "bg-[#0d2870] text-white scale-110" : "bg-slate-50 text-slate-400"
+                                    )}>
+                                        <CreditCard className="w-6 h-6" />
+                                    </div>
+                                    <span className="text-[11px] font-black uppercase tracking-widest text-slate-900">Échelonné (Acompte)</span>
+                                    <p className="text-[8px] text-slate-400 font-bold mt-2 uppercase tracking-tight">Payer une partie maintenant</p>
+                                    <p className="text-[9px] font-black text-[#0d2870] mt-4 uppercase tracking-[0.1em]">Solde restant à régulariser</p>
+                                </button>
+                            </div>
+
+                            {paymentType === "partial" && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: "auto" }}
+                                    className="p-6 bg-slate-50 rounded-lg border-2 border-slate-100 space-y-4"
+                                >
+                                    <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Montant de l'acompte (USD)</Label>
+                                    <div className="relative">
+                                        <Input
+                                            type="number"
+                                            value={partialAmount}
+                                            onChange={(e) => setPartialAmount(e.target.value)}
+                                            placeholder="Ex: 50"
+                                            className="h-14 bg-white border-2 border-slate-200 rounded-lg text-2xl font-black text-[#0d2870] focus-visible:ring-[#0d2870]"
+                                        />
+                                        <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-black text-slate-400">USD</div>
+                                    </div>
+                                    <p className="text-[9px] font-bold text-slate-400 italic">
+                                        * Le montant doit être supérieur à 0 et inférieur au total dû.
+                                    </p>
+                                </motion.div>
+                            )}
+
+                            <Button
+                                onClick={handleNext}
+                                className="w-full h-14 bg-[#0d2870] text-white rounded-lg font-black uppercase tracking-[0.2em] text-[10px] shadow-technical active:scale-[0.98] transition-all border-none"
+                            >
+                                Valider le type de règlement <ArrowRight className="w-4 h-4 ml-3" />
+                            </Button>
+                        </motion.div>
+                    )}
+
                     {step === "provider" && (
                         <motion.div key="provider" variants={containerVariants} initial="hidden" animate="visible" exit="exit" className="space-y-6">
                             <div className="flex items-center justify-between pb-2 border-b-2 border-slate-900/5">
@@ -347,7 +467,7 @@ export default function PaymentPage() {
                             </div>
 
                             <Button
-                                onClick={runSimulation}
+                                onClick={handlePayment}
                                 className="w-full h-14 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-black uppercase tracking-[0.2em] text-[10px] shadow-technical active:scale-[0.98] transition-all border-none"
                             >
                                 Lancer la demande de paiement <CheckCircle className="w-4 h-4 ml-3" />

@@ -3,8 +3,11 @@ import { db } from "@/db";
 import { notesTaxation, paiements, assujettis } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import Link from "next/link";
-import { History, ArrowLeft, DownloadCloud, FileText, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { History, ArrowLeft, DownloadCloud, FileText, CheckCircle2, Clock, AlertCircle, Receipt } from "lucide-react";
 import { cn } from "@/lib/utils";
+import dynamic from "next/dynamic";
+
+const QuittanceDownloadButton = dynamic(() => import("@/components/assujetti/QuittanceDownloadButton"), { ssr: false });
 
 export default async function HistoriquePage() {
     const session = await auth();
@@ -199,11 +202,21 @@ export default async function HistoriquePage() {
                                                         </p>
                                                     </div>
 
-                                                    <div className="text-right">
-                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Montant</p>
-                                                        <p className="text-base font-black text-[#0d2870] tabular-nums tracking-tighter">
-                                                            {formatCurrency(payment.montant)}
-                                                        </p>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="text-right">
+                                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Montant</p>
+                                                            <p className="text-base font-black text-[#0d2870] tabular-nums tracking-tighter">
+                                                                {formatCurrency(payment.montant)}
+                                                            </p>
+                                                        </div>
+
+                                                        {payment.statut === "confirme" && (
+                                                            <QuittanceDownloadButton 
+                                                                payment={payment} 
+                                                                assujetti={assujetti} 
+                                                                note={note} 
+                                                            />
+                                                        )}
                                                     </div>
                                                 </div>
                                             ))}

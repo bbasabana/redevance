@@ -214,6 +214,8 @@ export const notesTaxation = pgTable("notes_taxation", {
     montantNet: decimal("montant_net", { precision: 10, scale: 2 }).notNull(),
     montantPenalites: decimal("montant_penalites", { precision: 10, scale: 2 }).default("0"),
     montantTotalDu: decimal("montant_total_du", { precision: 10, scale: 2 }).notNull(),
+    montantPaye: decimal("montant_paye", { precision: 10, scale: 2 }).default("0"),
+    solde: decimal("solde", { precision: 10, scale: 2 }),
     devise: varchar("devise", { length: 3 }).default("USD"),
     statut: statutNoteEnum("statut").default("brouillon"),
     dateEmission: date("date_emission"),
@@ -402,6 +404,7 @@ export const taxationRules = pgTable("taxation_rules", {
     id: uuid("id").primaryKey().defaultRandom(),
     category: locationCategoryEnum("category").notNull(),
     entityType: sousTypePmEnum("entity_type").notNull(), // ppta, pmta, pm
+    categorieAppareil: varchar("categorie_appareil", { length: 100 }), // "Téléviseurs" or "Radios"
     price: decimal("price", { precision: 10, scale: 2 }).notNull(),
     currency: varchar("currency", { length: 3 }).default("USD"),
 });

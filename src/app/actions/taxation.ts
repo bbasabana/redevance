@@ -7,6 +7,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { createFullSession } from "@/lib/auth/session";
 import { createHmac } from "crypto";
+import { sendSms } from "@/lib/sms/messagebird";
 
 const QR_SECRET = process.env.QR_SECRET || "rtnc-secure-secret-2026-redevance";
 
@@ -91,9 +92,22 @@ export async function getTaxationNotes(filters?: { year?: number; statut?: strin
             .where(and(...queryFilters))
             .orderBy(desc(notesTaxation.exercice), desc(notesTaxation.createdAt));
 
+        // Join with declaration lines for each note
+        const notesWithLines = await Promise.all(notes.map(async (note) => {
+            if (!note.declarationId) return { ...note, lignes: [] };
+            const lines = await db
+                .select()
+                .from(lignesDeclaration)
+                .where(eq(lignesDeclaration.declarationId, note.declarationId));
+            return {
+                ...note,
+                lignes: lines
+            };
+        }));
+
         return {
             success: true,
-            data: notes
+            data: notesWithLines
         };
     } catch (error) {
         console.error("Error fetching taxation notes:", error);
@@ -137,6 +151,7 @@ export async function getChildrenGeographies(parentId: string) {
 const CalculateTaxSchema = z.object({
     geographyId: z.string().uuid(),
     entityType: z.enum(["pmta", "ppta", "pm"]),
+    categorieAppareil: z.enum(["Téléviseurs", "Radios"]),
 });
 
 export async function calculateTax(data: z.infer<typeof CalculateTaxSchema>) {
@@ -179,13 +194,14 @@ export async function calculateTax(data: z.infer<typeof CalculateTaxSchema>) {
             .from(taxationRules)
             .where(and(
                 eq(taxationRules.category, category as any),
-                eq(taxationRules.entityType, validated.entityType)
+                eq(taxationRules.entityType, validated.entityType),
+                eq(taxationRules.categorieAppareil, validated.categorieAppareil)
             ))
             .limit(1);
 
         if (!rule) {
-            console.error(`[TAX_CALC] No rule found in database for category=${category}, entityType=${validated.entityType}`);
-            return { success: false, error: "Pricing rule not found for this combination" };
+            console.error(`[TAX_CALC] No rule found in database for category=${category}, entityType=${validated.entityType}, device=${validated.categorieAppareil}`);
+            return { success: false, error: `Règle de prix non trouvée pour ${validated.categorieAppareil}` };
         }
 
         console.log(`[TAX_CALC] Success! Found price: ${rule.price} ${rule.currency}`);
@@ -226,6 +242,8 @@ export async function saveNoteTaxation(data: z.infer<typeof SaveNoteSchema>) {
             montantBrut: validated.montantNet.toString() as any, // Temporary type cast for decimal
             montantNet: validated.montantNet.toString() as any,
             montantTotalDu: validated.montantNet.toString() as any,
+            montantPaye: "0",
+            solde: validated.montantNet.toString() as any,
             devise: validated.devise,
             statut: "brouillon",
             genereParId: session.user.id
@@ -275,16 +293,17 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
             return { success: false, error: "Identification déjà complétée pour ce compte.", alreadyCompleted: true };
         }
 
+        // 0.2 Fetch Assujetti Profile
+        const [assujetti] = await db
+            .select()
+            .from(assujettis)
+            .where(eq(assujettis.userId, userId))
+            .limit(1);
+
+        if (!assujetti) return { success: false, error: "Profil assujetti introuvable" };
+
         // 0.1 Check Uniqueness for Email and Phone
         if (validated.email || validated.telephone) {
-            const [assujetti] = await db
-                .select()
-                .from(assujettis)
-                .where(eq(assujettis.userId, userId))
-                .limit(1);
-
-            if (!assujetti) return { success: false, error: "Profil assujetti introuvable" };
-
             if (validated.email) {
                 const [existingEmail] = await db
                     .select()
@@ -310,11 +329,53 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
             }
         }
 
+        // 0.2 Check Uniqueness for ID Codes (NIF, RCCM, ID NAT)
+        if (validated.numeroImpot) {
+            const [existingNif] = await db
+                .select()
+                .from(assujettis)
+                .where(and(
+                    eq(assujettis.nif, validated.numeroImpot),
+                    not(eq(assujettis.id, assujetti.id))
+                ))
+                .limit(1);
+            if (existingNif) return { success: false, error: "Ce Numéro Impôt (NIF) est déjà enregistré par un autre assujetti." };
+        }
+
+        if (validated.rccm) {
+            const [existingRccm] = await db
+                .select()
+                .from(assujettis)
+                .where(and(
+                    eq(assujettis.rccm, validated.rccm),
+                    not(eq(assujettis.id, assujetti.id))
+                ))
+                .limit(1);
+            if (existingRccm) return { success: false, error: "Ce numéro RCCM est déjà enregistré par un autre assujetti." };
+        }
+
+        if (validated.idNat) {
+            const [existingIdNat] = await db
+                .select()
+                .from(assujettis)
+                .where(and(
+                    eq(assujettis.idNat, validated.idNat),
+                    not(eq(assujettis.id, assujetti.id))
+                ))
+                .limit(1);
+            if (existingIdNat) return { success: false, error: "Cet Identifiant National (ID NAT) est déjà enregistré par un autre assujetti." };
+        }
+
         // 1. Determine Classification (PM vs PMTA vs PPTA)
         let sousType: "pm" | "pmta" | "ppta" = "pm";
-        const isPMTA = validated.activities.some(a => a !== "autre");
-        if (isPMTA) {
-            sousType = "pmta";
+        
+        if (assujetti.typePersonne === "pp") {
+            sousType = "ppta";
+        } else {
+            const isPMTA = validated.activities.some(a => a !== "autre");
+            if (isPMTA) {
+                sousType = "pmta";
+            }
         }
 
         // 2. Generate Unique Fiscal ID
@@ -323,14 +384,6 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
         const randomStr = (c: string, l: number) => Array.from({ length: l }, () => c[0.1 > 0 ? Math.floor(Math.random() * c.length) : 0]).join(''); // Corrected randomStr logic
         const identifiantFiscal = `${randomStr(chars, 3)}${randomStr(nums, 4)}${randomStr(chars, 1)}`;
 
-        // 3. Find assujetti record for this user (fetch again to be sure or use previous)
-        const [assujetti] = await db
-            .select()
-            .from(assujettis)
-            .where(eq(assujettis.userId, userId))
-            .limit(1);
-
-        if (!assujetti) return { success: false, error: "Profil assujetti introuvable" };
 
         // 4. Resolve Address Details for Preview
         let category: string | null = null;
@@ -355,30 +408,45 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
         }
 
         if (!category) return { success: false, error: "Catégorie géographique introuvable" };
-
-        const [rule] = await db
+        
+        // 4.1 Get Prices for TV and Radio
+        const rules = await db
             .select()
             .from(taxationRules)
             .where(and(
                 eq(taxationRules.category, category as any),
                 eq(taxationRules.entityType, sousType)
-            ))
-            .limit(1);
+            ));
 
-        if (!rule) return { success: false, error: "Règle de taxation introuvable" };
+        const tvRule = rules.find(r => r.categorieAppareil === "Téléviseurs");
+        const radioRule = rules.find(r => r.categorieAppareil === "Radios") || tvRule;
 
-        const pu = Number(rule.price);
-        const items = [];
-        if (validated.nbTv > 0) {
-            items.push({ label: "Téléviseurs", qty: validated.nbTv, pu });
-        } else if (validated.nbRadio > 0) {
-            items.push({ label: "Radios", qty: validated.nbRadio, pu });
+        if (!tvRule) return { success: false, error: "Règle de taxation TV introuvable" };
+
+        const puTv = Number(tvRule.price);
+        const puRadio = radioRule ? Number(radioRule.price) : puTv;
+        
+        const totalAppareils = validated.nbTv + validated.nbRadio;
+        const montantTv = validated.nbTv * puTv;
+        const montantRadio = validated.nbRadio * puRadio;
+        const montantBrut = montantTv + montantRadio;
+
+        // Rule: 25% reduction if >= 51 devices
+        let reductionPct = 0;
+        if (totalAppareils >= 51) {
+            reductionPct = 25;
         }
 
-        const calculatedTvQty = validated.nbTv > 0 ? validated.nbTv : 0;
-        const calculatedRadioQty = validated.nbTv > 0 ? 0 : (validated.nbRadio > 0 ? validated.nbRadio : 0);
+        const montantReduction = (montantBrut * reductionPct) / 100;
+        const totalUSD = montantBrut - montantReduction;
 
-        const totalUSD = (calculatedTvQty + calculatedRadioQty) * pu;
+        const items = [];
+        if (validated.nbTv > 0) {
+            items.push({ label: "Téléviseurs", qty: validated.nbTv, pu: puTv });
+        }
+        if (validated.nbRadio > 0) {
+            items.push({ label: "Radios", qty: validated.nbRadio, pu: puRadio });
+        }
         // 4.1 Fetch Dynamic Exchange Rate
         const [rateSetting] = await db
             .select({ value: settings.value })
@@ -410,8 +478,8 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
                     declarationId: newDecl.id,
                     categorieAppareil: "Téléviseurs",
                     nombre: validated.nbTv,
-                    tarifUnitaire: pu.toString(),
-                    montantLigne: (validated.nbTv * pu).toString(),
+                    tarifUnitaire: puTv.toString(),
+                    montantLigne: montantTv.toString(),
                 });
             }
             if (validated.nbRadio > 0) {
@@ -419,9 +487,8 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
                     declarationId: newDecl.id,
                     categorieAppareil: "Radios",
                     nombre: validated.nbRadio,
-                    tarifUnitaire: pu.toString(),
-                    montantLigne: (validated.nbRadio * pu).toString(),
-                    remarque: validated.nbTv > 0 ? "Non facturé (TV prioritaire)" : undefined
+                    tarifUnitaire: puRadio.toString(),
+                    montantLigne: montantRadio.toString(),
                 });
             }
 
@@ -432,9 +499,13 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
                 declarationId: newDecl.id,
                 exercice: currentYear,
                 numeroNote,
-                montantBrut: totalUSD.toString(),
+                montantBrut: montantBrut.toString(),
+                reductionPct: reductionPct.toString(),
+                montantReduction: montantReduction.toString(),
                 montantNet: totalUSD.toString(),
                 montantTotalDu: totalUSD.toString(),
+                montantPaye: "0",
+                solde: totalUSD.toString(),
                 statut: "emise",
                 dateEmission: new Date().toISOString().split('T')[0],
                 dateEcheance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days later
@@ -484,12 +555,23 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
         // 6. Instantly update the session cookie
         await createFullSession(session.user.id, "assujetti", true);
 
+        // 7. Send SMS Summary (Asynchronous)
+        if (validated.telephone) {
+            try {
+                const body = `RTNC Redevance: Identification réussie pour ${assujetti.nomRaisonSociale}. Exercice: ${currentYear}. TV: ${validated.nbTv}, Radio: ${validated.nbRadio}. Montant à payer: ${totalUSD.toFixed(2)} USD (${totalFC.toLocaleString('fr-FR')} FC). ID Fiscal: ${identifiantFiscal}. Merci de soutenir la RTNC.`;
+                await sendSms([validated.telephone], body);
+            } catch (smsErr) {
+                console.error("Erreur lors de l'envoi du SMS de résumé:", smsErr);
+            }
+        }
+
         return {
             success: true,
             data: {
                 identifiantFiscal,
                 sousType,
-                pu,
+                puTv,
+                puRadio,
                 totalUSD,
                 totalFC,
                 rate,
@@ -508,5 +590,26 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
     } catch (error) {
         console.error("Error completing identification:", error);
         return { success: false, error: "Erreur lors de la finalisation" };
+    }
+}
+
+export async function checkUniqueness(field: "nif" | "rccm" | "idNat", value: string, currentAssujettiId?: string) {
+    try {
+        if (!value || value.length < 3) return { isUnique: true };
+
+        const whereClause = currentAssujettiId 
+            ? and(eq(assujettis[field], value), not(eq(assujettis.id, currentAssujettiId)))
+            : eq(assujettis[field], value);
+
+        const [existing] = await db
+            .select()
+            .from(assujettis)
+            .where(whereClause)
+            .limit(1);
+
+        return { isUnique: !existing };
+    } catch (error) {
+        console.error("Check Uniqueness Error:", error);
+        return { isUnique: true }; 
     }
 }

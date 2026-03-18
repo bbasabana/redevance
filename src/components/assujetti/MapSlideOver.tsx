@@ -229,9 +229,12 @@ export default function MapSlideOver({ isOpen, onClose, onConfirm, initialAddres
                                     )}
                                 </div>
                                 {coords && (
-                                    <p className="text-[9px] text-slate-400 font-medium ml-1">
-                                        📍 {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
-                                    </p>
+                                    <div className="flex items-center gap-1.5 ml-1 animate-in fade-in slide-in-from-left-2 duration-300">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-[#0d2870]" />
+                                        <p className="text-[9px] text-[#0d2870] font-black uppercase tracking-tighter">
+                                            Position GPS : {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
+                                        </p>
+                                    </div>
                                 )}
                             </div>
 

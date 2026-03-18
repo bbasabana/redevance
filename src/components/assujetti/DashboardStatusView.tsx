@@ -239,8 +239,22 @@ export function DashboardStatusView({ data }: DashboardStatusViewProps) {
 
                         <div>
                             <p className="text-3xl font-black tabular-nums text-slate-900 tracking-tight">
-                                {formatCurrency(activeNote.montantTotalDu)}
+                                {formatCurrency(activeNote.solde || activeNote.montantTotalDu)}
                             </p>
+                            {Number(activeNote.montantPaye) > 0 && (
+                                <div className="mt-2 space-y-1.5">
+                                    <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                                        <span>Déjà payé: {formatCurrency(activeNote.montantPaye)}</span>
+                                        <span>{Math.round((Number(activeNote.montantPaye) / Number(activeNote.montantTotalDu)) * 100)}%</span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                        <div 
+                                            className="h-full bg-emerald-500 rounded-full transition-all duration-500" 
+                                            style={{ width: `${(Number(activeNote.montantPaye) / Number(activeNote.montantTotalDu)) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                             {Number(activeNote.montantPenalites) > 0 && (
                                 <p className="text-xs font-semibold text-red-500 mt-1">
                                     dont {formatCurrency(activeNote.montantPenalites)} de pénalités
@@ -252,7 +266,7 @@ export function DashboardStatusView({ data }: DashboardStatusViewProps) {
                             href="/assujetti/redevance/en-cours"
                             className="text-[11px] font-black text-[#0d2870] uppercase tracking-widest flex items-center gap-1 mt-auto hover:opacity-70 transition-opacity"
                         >
-                            Voir le détail <ArrowRight className="w-3 h-3" />
+                            {Number(activeNote.montantPaye) > 0 ? "Gérer mes paiements" : "Voir le détail"} <ArrowRight className="w-3 h-3" />
                         </Link>
                     </motion.div>
 
