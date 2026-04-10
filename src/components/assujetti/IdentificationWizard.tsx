@@ -139,21 +139,21 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
         "Sud-Ubangi": "GEM"
     };
 
-    // Auto-prefix RCCM based on province
+    // Auto-prefix RCCM based on province (Improved AI-like logic)
     useEffect(() => {
-        if (province && !lockedFields.rccm) {
+        if (province && !lockedFields.rccm && hasEstablishment) {
             const selectedProvince = provinces.find(p => p.id === province);
             if (selectedProvince) {
                 const code = PROVINCE_RCCM_CODES[selectedProvince.nom] || selectedProvince.nom.substring(0, 3).toUpperCase();
                 const prefix = `CD/${code}/RCCM:`;
                 
-                // Only update if it's empty or already looks like an RCCM prefix but with wrong code
+                // If rccm is empty or just has a different prefix, update it
                 if (!entityInfo.rccm || (entityInfo.rccm.startsWith("CD/") && !entityInfo.rccm.includes("-"))) {
                     setEntityInfo(prev => ({ ...prev, rccm: prefix }));
                 }
             }
         }
-    }, [province, provinces]);
+    }, [province, provinces, hasEstablishment]);
 
     // Debounce effect for uniqueness checks
     useEffect(() => {
@@ -181,6 +181,8 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
     // --- STEP 3: Détention ---
     const [nbTv, setNbTv] = useState<number>(progress?.step3Data?.nbTv || 0);
     const [nbRadio, setNbRadio] = useState<number>(progress?.step3Data?.nbRadio || 0);
+    const [wantsInstallments, setWantsInstallments] = useState(false);
+    const [nbInstallments, setNbInstallments] = useState(2);
 
     // --- STEP 4: Note Result ---
     const [previewData, setPreviewData] = useState<any>(null);
@@ -211,51 +213,47 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
         };
     }, [step]);
 
-    // PRE-POPULATION LOGIC (String Match from Registration)
-    // 1. Try to match Province if not set
+    // PRE-POPULATION LOGIC (Improved matching from Registration)
     useEffect(() => {
         if (!province && provinces.length > 0 && assujetti?.adresseSiege) {
-            // Very simple check: see if any province name is in the address string
-            const found = provinces.find(p =>
-                assujetti.adresseSiege.toLowerCase().includes(p.nom.toLowerCase())
-            );
+            const lowerAddr = assujetti.adresseSiege.toLowerCase();
+            const found = provinces.find(p => lowerAddr.includes(p.nom.toLowerCase()));
             if (found) setProvince(found.id);
         }
     }, [provinces, province, assujetti?.adresseSiege]);
 
-    // 2. Try to match Ville/Cite from registration commune/quartier if not set
     useEffect(() => {
         if (province && (villes.length > 0 || cites.length > 0) && !ville && !cite) {
-            const regCommune = assujetti?.commune?.toLowerCase();
-            const foundVille = villes.find(v => v.nom.toLowerCase() === regCommune);
+            const regAddr = assujetti?.adresseSiege?.toLowerCase() || "";
+            const regCommune = assujetti?.commune?.toLowerCase() || "";
+            
+            const foundVille = villes.find(v => regAddr.includes(v.nom.toLowerCase()) || regCommune.includes(v.nom.toLowerCase()));
             if (foundVille) {
                 setVille(foundVille.id);
             } else {
-                const foundCite = cites.find(c => c.nom.toLowerCase() === regCommune);
+                const foundCite = cites.find(c => regAddr.includes(c.nom.toLowerCase()) || regCommune.includes(c.nom.toLowerCase()));
                 if (foundCite) setCite(foundCite.id);
             }
         }
-    }, [villes, cites, province, ville, cite, assujetti?.commune]);
+    }, [villes, cites, province, ville, cite, assujetti?.adresseSiege, assujetti?.commune]);
 
-    // 3. Try to match Commune if not set
     useEffect(() => {
         if (communes.length > 0 && !commune) {
-            const regCommune = assujetti?.commune?.toLowerCase();
-            const found = communes.find(c => c.nom.toLowerCase() === regCommune);
+            const regAddr = assujetti?.adresseSiege?.toLowerCase() || "";
+            const regCommune = assujetti?.commune?.toLowerCase() || "";
+            const found = communes.find(c => regAddr.includes(c.nom.toLowerCase()) || regCommune.includes(c.nom.toLowerCase()));
             if (found) setCommune(found.id);
         }
-    }, [communes, commune, assujetti?.commune]);
+    }, [communes, commune, assujetti?.adresseSiege, assujetti?.commune]);
 
-    // 4. Try to match Quartier if not set
     useEffect(() => {
         if (quartiers.length > 0 && !quartier) {
-            const regQuartier = (assujetti?.quartier || progress?.step1Data?.quartier)?.toLowerCase();
-            if (regQuartier) {
-                const found = quartiers.find(q => q.nom.toLowerCase() === regQuartier);
-                if (found) setQuartier(found.id);
-            }
+            const regAddr = assujetti?.adresseSiege?.toLowerCase() || "";
+            const regQuartier = (assujetti?.quartier || progress?.step1Data?.quartier)?.toLowerCase() || "";
+            const found = quartiers.find(q => regAddr.includes(q.nom.toLowerCase()) || regQuartier.includes(q.nom.toLowerCase()));
+            if (found) setQuartier(found.id);
         }
-    }, [quartiers, quartier, assujetti?.quartier, progress?.step1Data?.quartier]);
+    }, [quartiers, quartier, assujetti?.adresseSiege, assujetti?.quartier, progress?.step1Data?.quartier]);
 
     // Load Villes & Cités based on Province - also detect if ville-province (direct communes)
     useEffect(() => {
@@ -443,6 +441,8 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                 adressePhysique,
                 email,
                 telephone,
+                wantsInstallments,
+                nbInstallments
             });
 
             if (res.success && res.data) {
@@ -659,15 +659,23 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                             {step === 2 && (
                                 <div className="space-y-4">
                                     {isPP && (
-                                        <div className="flex items-center space-x-2 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 mb-2">
-                                            <Checkbox
-                                                id="hasEstablishment"
-                                                checked={hasEstablishment}
-                                                onCheckedChange={(checked) => setHasEstablishment(!!checked)}
-                                            />
-                                            <Label htmlFor="hasEstablishment" className="text-xs font-bold text-[#0d2870] cursor-pointer">
-                                                Avez-vous un établissement à renseigner ?
-                                            </Label>
+                                        <div className="flex flex-col gap-3 p-4 bg-indigo-50/50 rounded-2xl border-2 border-indigo-100/50 mb-2 transition-all">
+                                            <div className="flex items-start gap-3">
+                                                <Checkbox
+                                                    id="hasEstablishment"
+                                                    checked={hasEstablishment}
+                                                    onCheckedChange={(checked) => setHasEstablishment(!!checked)}
+                                                    className="mt-1"
+                                                />
+                                                <div className="space-y-1">
+                                                    <Label htmlFor="hasEstablishment" className="text-sm font-black text-[#0d2870] cursor-pointer block">
+                                                        Disposez-vous d'un établissement commercial ?
+                                                    </Label>
+                                                    <p className="text-[10px] text-slate-500 font-medium leading-tight">
+                                                        Cochez cette case uniquement si vous possédez une boutique, un hôtel, ou tout autre établissement physique assujetti à la redevance.
+                                                    </p>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
 
@@ -948,16 +956,62 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                             </div>
 
                                             {/* Totals */}
-                                            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
-                                                <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total (USD)</p>
-                                                    <p className="text-lg font-black text-slate-900">${previewData.totalUSD?.toFixed(2) ?? "—"}</p>
+                                            <div className="space-y-3">
+                                                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100">
+                                                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total (USD)</p>
+                                                        <p className="text-lg font-black text-slate-900">${previewData.totalUSD?.toFixed(2) ?? "—"}</p>
+                                                    </div>
+                                                    <div className="p-3 rounded-xl bg-[#0d2870]/5 border border-[#0d2870]/10 text-right">
+                                                        <p className="text-[8px] font-black text-[#0d2870] uppercase tracking-widest mb-0.5">Total à Payer (FC)</p>
+                                                        <p className="text-lg font-black text-[#0d2870]">
+                                                            <CountUp end={previewData.totalFC} separator=" " duration={2.5} /> FC
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                                <div className="p-3 rounded-xl bg-[#0d2870]/5 border border-[#0d2870]/10 text-right">
-                                                    <p className="text-[8px] font-black text-[#0d2870] uppercase tracking-widest mb-0.5">Total à Payer (FC)</p>
-                                                    <p className="text-lg font-black text-[#0d2870]">
-                                                        <CountUp end={previewData.totalFC} separator=" " duration={2.5} /> FC
-                                                    </p>
+
+                                                {/* Echelonnement Options */}
+                                                <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100/50 space-y-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-start gap-3">
+                                                            <Checkbox 
+                                                                id="wantsInstallments" 
+                                                                checked={wantsInstallments}
+                                                                onCheckedChange={(checked) => setWantsInstallments(!!checked)}
+                                                                className="mt-1"
+                                                            />
+                                                            <div className="space-y-0.5">
+                                                                <Label htmlFor="wantsInstallments" className="text-[10px] font-black text-[#0d2870] uppercase tracking-wider cursor-pointer">Paiement Échelonné</Label>
+                                                                <p className="text-[9px] text-slate-500 font-medium">Diviser en plusieurs tranches monsuelles</p>
+                                                            </div>
+                                                        </div>
+                                                        {wantsInstallments && (
+                                                            <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200">
+                                                                {[2, 3, 4].map(n => (
+                                                                    <button
+                                                                        key={n}
+                                                                        type="button"
+                                                                        onClick={() => setNbInstallments(n)}
+                                                                        className={cn(
+                                                                            "w-8 h-8 rounded-md font-black text-[10px] transition-all",
+                                                                            nbInstallments === n ? "bg-[#0d2870] text-white" : "text-slate-400 hover:bg-slate-50"
+                                                                        )}
+                                                                    >
+                                                                        {n}X
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {wantsInstallments && (
+                                                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="pt-3 border-t border-indigo-100/50 flex justify-between items-center text-[10px]">
+                                                            <span className="font-bold text-slate-500">Par tranche ({nbInstallments}x) :</span>
+                                                            <div className="text-right">
+                                                                <span className="font-black text-[#0d2870] mr-2">${(previewData.totalUSD / nbInstallments).toFixed(2)} USD</span>
+                                                                <span className="font-black text-emerald-600">≈ {(previewData.totalFC / nbInstallments).toLocaleString('fr-FR')} FC</span>
+                                                            </div>
+                                                        </motion.div>
+                                                    )}
                                                 </div>
                                             </div>
 

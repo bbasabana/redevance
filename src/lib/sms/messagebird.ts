@@ -95,7 +95,7 @@ export async function sendControlNotificationSms(params: {
   if (!params.phone || params.phone.trim().length < 8) {
     return { ok: false, error: "Numéro manquant" };
   }
-  const ref = params.reference ? ` Réf: ${params.reference}.` : "";
-  const body = `RTNC RAA: ${params.nom}, contrôle terrain enregistré. Montant: ${params.montant}, période ${params.periode}.${ref}`;
+  const ref = params.reference ? ` | Réf: ${params.reference}` : "";
+  const body = `RTNC REDEVANCE : Félicitations ${params.nom} ! Votre contrôle de terrain pour l'exercice ${params.periode} a été enregistré avec succès. Montant validé : ${params.montant}${ref}. Merci pour votre civisme fiscal.`;
   return sendSms([params.phone], body);
 }

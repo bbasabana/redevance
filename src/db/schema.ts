@@ -5,7 +5,7 @@ export const typePersonneEnum = pgEnum("type_personne_enum", ["pp", "pm", "pp_ad
 export const zoneTarifaireEnum = pgEnum("zone_tarifaire_enum", ["urbaine", "rurale"]);
 export const statutAssujettiEnum = pgEnum("statut_assujetti_enum", ["nouveau", "en_cours", "redevable", "en_regle", "relance", "mise_en_demeure", "contentieux", "exonere"]);
 export const statutDeclarationEnum = pgEnum("statut_declaration_enum", ["brouillon", "soumise", "validee", "contestee", "archivee"]);
-export const statutNoteEnum = pgEnum("statut_note_enum", ["brouillon", "en_attente_signature1", "en_attente_signature2", "emise", "payee", "partiellement_payee", "en_retard", "contentieux"]);
+export const statutNoteEnum = pgEnum("statut_note_enum", ["brouillon", "en_attente_signature1", "en_attente_signature2", "emise", "echelonnee", "payee", "partiellement_payee", "en_retard", "contentieux"]);
 export const statutPaiementEnum = pgEnum("statut_paiement_enum", ["en_attente", "confirme", "rejete", "rembourse"]);
 export const canalPaiementEnum = pgEnum("canal_paiement_enum", ["banque", "mtn_money", "airtel_money", "orange_money", "autre"]);
 export const typeControleEnum = pgEnum("type_controle_enum", ["sur_pieces", "sur_place", "visite_domiciliaire", "perquisition"]);
@@ -229,6 +229,8 @@ export const notesTaxation = pgTable("notes_taxation", {
     signeParDirecteurAt: timestamp("signe_par_directeur_at"),
     banqueNom: varchar("banque_nom", { length: 100 }),
     banqueIban: varchar("banque_iban", { length: 50 }),
+    parentNoteId: uuid("parent_note_id").references((): any => notesTaxation.id),
+    isEchelonne: boolean("is_echelonne").default(false),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
 });

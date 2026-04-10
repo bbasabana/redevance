@@ -14,7 +14,9 @@ export default async function ProfilInfosPage() {
     const [assujetti] = await db
         .select({
             assujetti: assujettis,
-            commune: geographies.nom,
+            geoNom: geographies.nom,
+            geoType: geographies.type,
+            geoParentId: geographies.parentId,
             emailUser: appUsers.email,
         })
         .from(assujettis)
@@ -25,7 +27,19 @@ export default async function ProfilInfosPage() {
 
     if (!assujetti) return null;
 
-    const { assujetti: data, commune, emailUser } = assujetti;
+    const { assujetti: data, geoNom, geoType, geoParentId, emailUser } = assujetti;
+    
+    // Logic to find the true Commune name if geo is a Quartier
+    let communeName = geoNom;
+    if (geoType === "QUARTIER" && geoParentId) {
+        const [parentGeo] = await db
+            .select({ nom: geographies.nom })
+            .from(geographies)
+            .where(eq(geographies.id, geoParentId))
+            .limit(1);
+        if (parentGeo) communeName = parentGeo.nom;
+    }
+
     const isPM = data.typePersonne === "pm" || data.typePersonne === "pm_advantage";
 
     return (
@@ -248,7 +262,7 @@ export default async function ProfilInfosPage() {
                                             <MapPin className="w-3.5 h-3.5 text-[#0d2870]" /> Circonscription
                                         </p>
                                         <p className="text-sm font-black text-slate-900 uppercase">
-                                            COMMUNE DE {commune || "INCONNUE"}
+                                            COMMUNE DE {communeName || "INCONNUE"}
                                         </p>
                                         {data.latitude && data.longitude && (
                                             <div className="mt-3 pt-3 border-t border-slate-200/50">

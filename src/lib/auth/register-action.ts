@@ -93,8 +93,18 @@ export async function registerUser(formData: z.infer<typeof registerSchema>) {
             }
         });
 
-        // 7. Send Welcome Email
+        // 7. Send Welcome Email & SMS
         await sendWelcomeEmail(validatedData.email, validatedData.nomPrenom);
+        
+        if (validatedData.telephone) {
+            try {
+                const { sendSms } = await import("@/lib/sms/messagebird");
+                const body = `Bienvenue sur le Portail Redevance RTNC, ${validatedData.nomPrenom}. Votre compte a été initialisé avec succès. Veuillez compléter votre identification pour accéder à votre espace.`;
+                await sendSms([validatedData.telephone], body);
+            } catch (smsErr) {
+                console.error("SMS welcome failed:", smsErr);
+            }
+        }
 
         // 8. Auto-create full session for immediate login
         await createFullSession(newUser.id, roleName || "assujetti", false);

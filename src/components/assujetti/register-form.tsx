@@ -426,7 +426,10 @@ export function RegisterForm() {
                                             </div>
                                         </div>
                                             <div className="space-y-2">
-                                                <Label className="text-slate-700 font-bold ml-1 text-xs uppercase tracking-wider">Téléphone</Label>
+                                                <div className="flex items-center justify-between px-1">
+                                                    <Label className="text-slate-700 font-bold text-xs uppercase tracking-wider">Téléphone <span className="text-red-500">*</span></Label>
+                                                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-black uppercase border border-emerald-100">+243</span>
+                                                </div>
                                                 <div className="flex h-11 sm:h-12 bg-white/50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-primary/20 transition-all">
                                                     <div className="bg-slate-100/50 px-3 flex items-center border-r border-slate-200 text-slate-500 font-bold text-sm">
                                                         +243
@@ -451,17 +454,18 @@ export function RegisterForm() {
                                 {step === 3 && (
                                     <div className="space-y-4">
                                         <div className="space-y-2">
-                                            <Label>Email</Label>
+                                            <Label className="text-slate-700 font-bold ml-1 text-xs uppercase tracking-wider">Email professionnel</Label>
                                             <Input
                                                 type="email"
                                                 placeholder="email@exemple.com"
                                                 value={formData.email}
                                                 onChange={(e) => updateFormData("email", e.target.value)}
                                                 required
+                                                className="h-11 sm:h-12 bg-white/50 border-slate-200 focus:border-primary/50 focus:ring-primary/20 transition-all rounded-xl"
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label>Mot de passe</Label>
+                                            <Label className="text-slate-700 font-bold ml-1 text-xs uppercase tracking-wider">Mot de passe</Label>
                                             <div className="relative">
                                                 <Input
                                                     type={showPassword ? "text" : "password"}
@@ -469,7 +473,7 @@ export function RegisterForm() {
                                                     value={formData.password}
                                                     onChange={(e) => updateFormData("password", e.target.value)}
                                                     required
-                                                    className="pr-10"
+                                                    className="pr-10 h-11 sm:h-12 bg-white/50 border-slate-200 focus:border-primary/50 focus:ring-primary/20 transition-all rounded-xl"
                                                 />
                                                 <button
                                                     type="button"
@@ -479,8 +483,8 @@ export function RegisterForm() {
                                                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                 </button>
                                             </div>
-                                            <p className="text-[10px] text-slate-400">
-                                                Le mot de passe doit contenir au moins une majuscule, un chiffre et un caractère spécial.
+                                            <p className="text-[10px] text-slate-400 font-medium px-2">
+                                                Le mot de passe doit comporter au moins 8 caractères pour une sécurité optimale.
                                             </p>
                                         </div>
                                     </div>
@@ -538,7 +542,7 @@ export function RegisterForm() {
                                 </Button>
                             )}
                             <Button type="submit" className="flex-1 py-5 sm:py-6 rounded-xl bg-primary hover:bg-primary/95 text-white font-black shadow-lg shadow-primary/25 transition-all active:scale-[0.98]" disabled={loading}>
-                                {step === steps.length - 1 ? (loading ? "Création..." : "Finaliser") : "Continuer"}
+                                {step === steps.length - 1 ? (loading ? "Enregistrement..." : "S'enregistrer maintenant") : "Continuer"}
                                 {step < steps.length - 1 && <ChevronRight className="w-4 h-4 ml-2" />}
                             </Button>
                         </div>
@@ -546,7 +550,7 @@ export function RegisterForm() {
 
                     {step === 0 && (
                         <p className="mt-8 text-center text-sm text-slate-500">
-                            Déjà inscrit ? <Link href="/panel/signin" className="text-primary font-bold hover:underline">Se connecter</Link>
+                            Déjà identifié ? <Link href="/panel/signin" className="text-primary font-bold hover:underline">Se connecter</Link>
                         </p>
                     )}
                 </CardContent>

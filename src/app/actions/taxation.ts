@@ -271,6 +271,8 @@ const CompleteIdentificationSchema = z.object({
     adressePhysique: z.string().optional(),
     email: z.string().email("Email invalide").optional().or(z.literal("")),
     telephone: z.string().min(8, "Numéro de téléphone trop court").optional().or(z.literal("")),
+    wantsInstallments: z.boolean().default(false).optional(),
+    nbInstallments: z.number().min(2).max(4).default(2).optional(),
 });
 
 export async function completeIdentification(data: z.infer<typeof CompleteIdentificationSchema>) {
@@ -455,7 +457,7 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
             .limit(1);
 
         const rate = rateSetting ? Number(rateSetting.value) : 2850;
-        const totalFC = totalUSD * rate;
+        const totalFC = Math.round(totalUSD * rate); // Rounded for clean FC display
 
         // 5. Persist the data in DB (Transaction)
         const currentYear = new Date().getFullYear();
@@ -506,10 +508,33 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
                 montantTotalDu: totalUSD.toString(),
                 montantPaye: "0",
                 solde: totalUSD.toString(),
-                statut: "emise",
+                statut: validated.wantsInstallments ? "echelonnee" : "emise",
+                isEchelonne: validated.wantsInstallments,
                 dateEmission: new Date().toISOString().split('T')[0],
                 dateEcheance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days later
             }).returning();
+
+            // Create installments if requested
+            if (validated.wantsInstallments && validated.nbInstallments) {
+                const installmentAmount = totalUSD / validated.nbInstallments;
+                for (let i = 1; i <= validated.nbInstallments; i++) {
+                    await tx.insert(notesTaxation).values({
+                        assujettiId: assujetti.id,
+                        declarationId: newDecl.id,
+                        exercice: currentYear,
+                        numeroNote: `${numeroNote}/T${i}`,
+                        parentNoteId: newNote.id,
+                        montantBrut: (montantBrut / validated.nbInstallments).toString(),
+                        montantNet: installmentAmount.toString(),
+                        montantTotalDu: installmentAmount.toString(),
+                        montantPaye: "0",
+                        solde: installmentAmount.toString(),
+                        statut: "emise",
+                        dateEmission: new Date().toISOString().split('T')[0],
+                        dateEcheance: new Date(Date.now() + (30 * i) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                    });
+                }
+            }
 
             // Generate QR Data for preview
             qrData = await generateNoteQRData(newNote);
@@ -520,6 +545,7 @@ export async function completeIdentification(data: z.infer<typeof CompleteIdenti
                     identifiantFiscal,
                     typeStructure: validated.structure as any,
                     typeActivite: validated.activities[0] as any,
+                    activites: validated.activities,
                     sousTypePm: sousType,
                     nif: validated.numeroImpot,
                     rccm: validated.rccm,
