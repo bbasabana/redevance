@@ -1,13 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { X, Download, Smartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "pwa_install_dismissed";
 
+type InstallPromptEventLike = Event & {
+    prompt: () => Promise<{ outcome?: string } | void>;
+};
+
+/** Survit aux remontages React (ex. Strict Mode) : un seul `beforeinstallprompt` par chargement. */
+let capturedInstallEvent: InstallPromptEventLike | null = null;
+
 export function PwaInstallPrompt() {
-    const [deferredPrompt, setDeferredPrompt] = useState<{ prompt: () => Promise<{ outcome: string }> } | null>(null);
+    const [deferredPrompt, setDeferredPrompt] = useState<InstallPromptEventLike | null>(null);
     const [visible, setVisible] = useState(false);
     const [isInstalled, setIsInstalled] = useState(false);
 
@@ -24,13 +31,18 @@ export function PwaInstallPrompt() {
         const dismissed = sessionStorage.getItem(STORAGE_KEY);
         if (dismissed === "1") return;
 
+        if (capturedInstallEvent) {
+            setDeferredPrompt(capturedInstallEvent);
+            setVisible(true);
+        }
+
         const handler = (e: Event) => {
-            e.preventDefault();
-            const ev = e as unknown as { prompt?: () => Promise<{ outcome: string }> };
-            if (typeof ev.prompt === "function") {
-                setDeferredPrompt(ev);
-                setVisible(true);
-            }
+            const ev = e as InstallPromptEventLike;
+            if (typeof ev.prompt !== "function") return;
+            ev.preventDefault();
+            capturedInstallEvent = ev;
+            setDeferredPrompt(ev);
+            setVisible(true);
         };
 
         window.addEventListener("beforeinstallprompt", handler);
@@ -38,20 +50,24 @@ export function PwaInstallPrompt() {
     }, []);
 
     const handleInstall = async () => {
-        if (!deferredPrompt?.prompt) return;
+        const ev = deferredPrompt ?? capturedInstallEvent;
+        if (!ev || typeof ev.prompt !== "function") return;
         try {
-            await deferredPrompt.prompt();
+            await ev.prompt();
             setVisible(false);
             setDeferredPrompt(null);
+            capturedInstallEvent = null;
         } catch (_) {
             setVisible(false);
         }
     };
 
-    const handleDismiss = () => {
+    const handleDismiss = useCallback(() => {
         sessionStorage.setItem(STORAGE_KEY, "1");
         setVisible(false);
-    };
+        setDeferredPrompt(null);
+        capturedInstallEvent = null;
+    }, []);
 
     if (!visible || isInstalled) return null;
 

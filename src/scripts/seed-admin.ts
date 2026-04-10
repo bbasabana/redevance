@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 
 async function seedAdmin() {
     const adminEmail = "admin@redevance.cd";
-    const password = "AdminPassword123!";
+    const password = "manager2323";
 
     console.log(`Checking for existing admin: ${adminEmail}...`);
 
@@ -21,7 +21,7 @@ async function seedAdmin() {
     const [newAdmin] = await db.insert(adminUsers).values({
         email: adminEmail,
         passwordHash: passwordHash,
-        nomPrenom: "Admin Demo",
+        nomPrenom: "Direction Générale RTNC",
         telephone: "+243810000001",
         isActive: true,
         superAdmin: true,
@@ -34,7 +34,7 @@ async function seedAdmin() {
     console.log("SUCCESS: Admin Seeded");
     console.log(`Email: ${adminEmail}`);
     console.log(`Password: ${password}`);
-    console.log("Access URL: /admin/login (or /xredvance/in/access)");
+    console.log("Access URL: /x-rtnc-management-safe/login");
     console.log("==========================================\n");
 }
 

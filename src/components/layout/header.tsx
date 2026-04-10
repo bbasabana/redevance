@@ -9,14 +9,16 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { LogOut } from "lucide-react";
 import { signOut } from "next-auth/react";
+import { cn } from "@/lib/utils";
 
 interface HeaderProps {
     userName?: string;
     userTitle?: string;
     showLogo?: boolean;
+    className?: string;
 }
 
-export function Header({ userName, userTitle, showLogo = true }: HeaderProps) {
+export function Header({ userName, userTitle, showLogo = true, className }: HeaderProps) {
     const [mounted, setMounted] = useState(false);
     const [isLogoutOpen, setIsLogoutOpen] = useState(false);
 
@@ -26,7 +28,7 @@ export function Header({ userName, userTitle, showLogo = true }: HeaderProps) {
 
     if (!mounted) {
         return (
-            <header className="h-16 bg-white sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
+            <header className={cn("h-16 bg-white sticky top-0 z-30 flex items-center justify-between px-4 md:px-8", className)}>
                 <div className="flex items-center gap-6 flex-1">
                     {showLogo && (
                         <div className="block shrink-0">
@@ -52,7 +54,7 @@ export function Header({ userName, userTitle, showLogo = true }: HeaderProps) {
     }
 
     return (
-        <header className="h-16 bg-white sticky top-0 z-30 flex items-center justify-between px-4 md:px-8">
+        <header className={cn("h-16 bg-white sticky top-0 z-30 flex items-center justify-between px-4 md:px-8", className)}>
             <div className="flex items-center gap-6 flex-1">
                 {showLogo && (
                     <Link href="/assujetti/dashboard" className="block shrink-0">

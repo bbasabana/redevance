@@ -37,25 +37,30 @@ const ICON_MAP: Record<string, React.ElementType> = {
     audit: FileJson,
 };
 
-const adminItems = [
-    { title: "Tableau de Bord", href: "/admin/dashboard", iconName: "dashboard" },
-    { title: "Assujettis", href: "/admin/assujettis", iconName: "users" },
-    { title: "Contrôles à valider", href: "/admin/controles-a-valider", iconName: "declarations" },
-    { title: "Rapports Agents", href: "/admin/rapports/agents", iconName: "reports" },
-    { title: "Zones & Communes", href: "/admin/zones-communes", iconName: "zones" },
-    { title: "Tarifs", href: "/admin/tarifs", iconName: "tarifs" },
-    { title: "Périodes", href: "/admin/periodes", iconName: "periodes" },
-    { title: "Audit Logs", href: "/admin/audit", iconName: "audit" },
+const adminItems = (basePath: string) => [
+    { title: "Tableau de Bord", href: `${basePath}`, iconName: "dashboard" },
+    { title: "Assujettis", href: `${basePath}/assujettis`, iconName: "users" },
+    { title: "Contrôles à valider", href: `${basePath}/controles-a-valider`, iconName: "declarations" },
+    { title: "Statistiques & Revenus", href: `${basePath}/stats`, iconName: "reports" },
+    { title: "Zones & Communes", href: `${basePath}/zones-communes`, iconName: "zones" },
+    { title: "Tarifs", href: `${basePath}/tarifs`, iconName: "tarifs" },
+    { title: "Périodes", href: `${basePath}/periodes`, iconName: "periodes" },
+    { title: "Audit Logs", href: `${basePath}/audit`, iconName: "audit" },
 ];
 
-export function Sidebar() {
+export function Sidebar({ variant = "admin" }: { variant?: "admin" | "agent" }) {
     const pathname = usePathname();
+    const basePath = pathname.startsWith("/x-rtnc-management-safe") 
+        ? "/x-rtnc-management-safe" 
+        : "/admin";
+    
+    const items = adminItems(basePath);
 
     return (
         <div className="flex flex-col h-full bg-white border-r border-slate-200 w-64 shrink-0 overflow-y-auto">
             <div className="p-6">
                 <div className="flex items-center gap-3 mb-8 px-2">
-                    <Link href="/admin/dashboard" className="block">
+                    <Link href={basePath} className="block">
                         <Image
                             src="/logos/logo.png"
                             alt="RTNC Logo"
@@ -68,7 +73,7 @@ export function Sidebar() {
                 </div>
 
                 <nav className="space-y-1">
-                    {adminItems.map((item) => {
+                    {items.map((item) => {
                         const Icon = ICON_MAP[item.iconName] || LayoutDashboard;
                         const active = pathname === item.href;
                         return (

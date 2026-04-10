@@ -57,7 +57,6 @@ export function RegisterForm() {
                 return true;
             case 1: // Informations
                 const nifRegex = /^[A-Z]\d{7,9}$/;
-                const rccmRegex = /^[A-Z]{2}\/[A-Z0-9\s'’-]+(\/[A-Z0-9\s'’-]+)?\/RCCM:\d{2}-[A-Z]-\d{4,6}$/;
 
                 if (accountType === "particulier") {
                     if (formData.nif.trim() && !nifRegex.test(formData.nif)) {
@@ -77,8 +76,8 @@ export function RegisterForm() {
                         toast.error("Veuillez entrer la raison sociale de l'entreprise.", { className: "text-red-500" });
                         return false;
                     }
-                    if (!formData.rccm.trim() || !rccmRegex.test(formData.rccm)) {
-                        toast.error("Format RCCM invalide. Ex: CD/TRICOM/L'SHI/RCCM:14-B-1561", { className: "text-red-500" });
+                    if (!formData.rccm.trim()) {
+                        toast.error("Veuillez entrer le numéro RCCM.", { className: "text-red-500" });
                         return false;
                     }
                     if (!formData.representantLegal.trim()) {
@@ -143,7 +142,10 @@ export function RegisterForm() {
                 const result = await registerUser({
                     email: formData.email,
                     password: formData.password,
-                    nomPrenom: formData.nomComplet,
+                    nomPrenom:
+                        accountType === "entreprise"
+                            ? formData.representantLegal.trim() || formData.raisonSociale.trim()
+                            : formData.nomComplet,
                     telephone: formData.telephone,
                     numero: formData.numero,
                     adresseSiege: formData.adresse,
@@ -350,7 +352,7 @@ export function RegisterForm() {
                                                             <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-black uppercase border border-indigo-100 text-[8px]">REGISTRE</span>
                                                         </div>
                                                         <Input
-                                                            placeholder="CD/TRICOM/L'SHI/RCCM:14-B-1561"
+                                                            placeholder="Ex : CD/KIN/RCCM:14-B-1561"
                                                             value={formData.rccm}
                                                             onChange={(e) => updateFormData("rccm", e.target.value)}
                                                             className="h-11 sm:h-12 bg-white/50 border-slate-200 focus:border-primary/50 focus:ring-primary/20 transition-all font-mono text-xs rounded-xl"

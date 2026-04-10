@@ -24,8 +24,12 @@ const registerSchema = z.object({
     nif: z.string().regex(/^[A-Z0-9]{5,15}$/, "Format NIF invalide (Ex: A1006563)").optional().or(z.literal("")),
     // Enterprise
     raisonSociale: z.string().optional(),
-    rccm: z.string().regex(/^[A-Z0-9\s'.:\/-]{5,40}$/, "Format RCCM invalide (Ex: CD/TRICOM/L'SHI/RCCM:14-B-1561)").optional().or(z.literal("")),
+    rccm: z.string().max(100, "RCCM trop long").optional().or(z.literal("")),
     representantLegal: z.string().min(2, "Le nom du représentant légal est requis").optional().or(z.literal("")),
+}).superRefine((data, ctx) => {
+    if (data.accountType === "entreprise" && !data.rccm?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "RCCM requis", path: ["rccm"] });
+    }
 });
 
 export async function registerUser(formData: z.infer<typeof registerSchema>) {

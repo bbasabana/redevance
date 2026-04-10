@@ -29,9 +29,15 @@ export async function middleware(request: NextRequest) {
     const { nextUrl } = request;
     const pathname = nextUrl.pathname;
 
+    // ── Legacy Admin Protection (Blocking /admin) ──────────────────────────────
+    if (pathname.startsWith("/admin")) {
+        // Return 404 to hide that it exists
+        return new NextResponse(null, { status: 404 });
+    }
+
     // ── Custom Access URLs (for Admin) ────────────────────────────────────────
     if (pathname === "/xredvance/in/access" || pathname === "/xredevance/in/access") {
-        return NextResponse.redirect(new URL("/admin/login", request.url));
+        return NextResponse.redirect(new URL("/x-rtnc-management-safe/login", request.url));
     }
 
     // ── API mobile : CORS uniquement, pas de cookies (auth via Authorization: Bearer)
@@ -61,18 +67,26 @@ export async function middleware(request: NextRequest) {
         // Déjà connecté -> Redirection basée sur le rôle
         const role = session.role as string;
         if (isAgentRole(role)) {
-            return NextResponse.redirect(new URL(role === "admin" ? "/admin/dashboard" : "/dashboard/agent", request.url));
+            return NextResponse.redirect(new URL(role === "admin" ? "/x-rtnc-management-safe" : "/dashboard/agent", request.url));
         } else if (isAssujettiRole(role)) {
             return NextResponse.redirect(new URL("/assujetti/dashboard", request.url));
         }
     }
 
-    // ── Routes Agent & Admin ─────────────────────────────────────────────────
-    if (pathname.startsWith('/agent') || pathname.startsWith('/dashboard/agent') || pathname.startsWith('/admin')) {
+    // ── Routes Agent & New Secure Admin ───────────────────────────────────────
+    if (pathname.startsWith('/agent') || pathname.startsWith('/dashboard/agent') || pathname.startsWith('/x-rtnc-management-safe')) {
+        // Allow login page of secure admin
+        if (pathname === '/x-rtnc-management-safe/login') return NextResponse.next();
+
         if (!session) return NextResponse.redirect(new URL('/panel/signin', request.url));
 
         const role = session.role as string;
         if (!isAgentRole(role)) {
+            return NextResponse.redirect(new URL('/panel/signin', request.url));
+        }
+
+        // Restrict secure admin path to ADMIN role only
+        if (pathname.startsWith('/x-rtnc-management-safe') && role !== 'admin') {
             return NextResponse.redirect(new URL('/panel/signin', request.url));
         }
     }
