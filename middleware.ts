@@ -99,7 +99,7 @@ export async function middleware(request: NextRequest) {
 
         // Agents can NEVER access assujetti routes
         if (isAgentRole(role)) {
-            return NextResponse.redirect(new URL(role === "admin" ? "/admin/dashboard" : "/dashboard/agent", request.url));
+            return NextResponse.redirect(new URL(role === "admin" ? "/x-rtnc-management-safe" : "/dashboard/agent", request.url));
         }
 
         if (!isAssujettiRole(role)) {
@@ -120,7 +120,7 @@ export async function middleware(request: NextRequest) {
 
         // Agents NEVER access identification
         if (isAgentRole(role)) {
-            return NextResponse.redirect(new URL(role === "admin" ? "/admin/dashboard" : "/dashboard/agent", request.url));
+            return NextResponse.redirect(new URL(role === "admin" ? "/x-rtnc-management-safe" : "/dashboard/agent", request.url));
         }
 
         // Assujetti déjà actif n'a plus rien à faire ici

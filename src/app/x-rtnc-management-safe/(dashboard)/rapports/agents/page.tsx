@@ -1,5 +1,5 @@
 import { getAgentPerformanceListAction, getDeploymentDataAction, type DeploymentData } from "./actions";
-import { AgentPerformanceClient } from "@/app/admin/(dashboard)/rapports/agents/AgentPerformanceClient";
+import { AgentPerformanceClient } from "./AgentPerformanceClient";
 
 export default async function AgentReportsPage() {
     const [perfRes, deployRes] = await Promise.all([

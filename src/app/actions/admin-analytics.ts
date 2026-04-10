@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { notesTaxation, lignesDeclaration, declarations, assujettis, communes, provinces } from "@/db/schema";
+import { notesTaxation, lignesDeclaration, assujettis, geographies } from "@/db/schema";
 import { sql, eq, and, desc, sum, count } from "drizzle-orm";
 
 export async function getAdminKpis() {
@@ -71,19 +71,19 @@ export async function getGeographicPerformance() {
     try {
         const stats = await db
             .select({
-                commune: communes.nom,
+                geography: geographies.nom,
                 amount: sum(notesTaxation.montantNet),
                 quota: sql<number>`COUNT(${assujettis.id}) * 150`, // Mock quota logic: 150$ per assujetti for visualization
             })
             .from(notesTaxation)
             .innerJoin(assujettis, eq(notesTaxation.assujettiId, assujettis.id))
-            .innerJoin(communes, eq(assujettis.communeId, communes.id))
-            .groupBy(communes.nom)
+            .innerJoin(geographies, eq(assujettis.communeId, geographies.id))
+            .groupBy(geographies.nom)
             .orderBy(desc(sum(notesTaxation.montantNet)))
             .limit(10);
 
         return stats.map(s => ({
-            name: s.commune,
+            name: s.geography,
             revenue: Number(s.amount || 0),
             quota: Number(s.quota || 0)
         }));

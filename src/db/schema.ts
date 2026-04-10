@@ -433,6 +433,19 @@ export const settings = pgTable("settings", {
     updatedAt: timestamp("updated_at").$onUpdate(() => new Date()),
 });
 
+/** Journal d’actions sensibles dans la console admin (appliquer drizzle/add-admin-audit-logs.sql si besoin). */
+export const adminAuditLogs = pgTable("admin_audit_logs", {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id"),
+    action: varchar("action", { length: 120 }).notNull(),
+    targetType: varchar("target_type", { length: 80 }),
+    targetId: varchar("target_id", { length: 80 }),
+    summary: text("summary"),
+    metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
+    ipAddress: varchar("ip_address", { length: 45 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const missionsTerrain = pgTable("missions_terrain", {
     id: uuid("id").primaryKey().defaultRandom(),
     agentId: uuid("agent_id").references(() => appUsers.id).notNull(),

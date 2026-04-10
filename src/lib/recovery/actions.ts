@@ -59,7 +59,7 @@ export async function processReclamation(reclamationId: string, data: {
         })
         .where(eq(reclamations.id, reclamationId));
 
-    revalidatePath("/admin/recovery");
+    revalidatePath("/x-rtnc-management-safe");
     return { success: true };
 }
 
@@ -103,6 +103,6 @@ export async function initiateForcedRecovery(assujettiId: string, notesInternes?
         notesInternes,
     });
 
-    revalidatePath("/admin/recovery");
+    revalidatePath("/x-rtnc-management-safe");
     return { success: true };
 }

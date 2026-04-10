@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { getSession } from "@/lib/auth/session";
+import { logAdminAction } from "@/lib/admin/audit";
 
 export type PendingControlRow = {
   id: string;
@@ -196,6 +197,7 @@ export async function approveControlAction(controleId: string): Promise<
     const [row] = await db
       .select({
         assujettiId: controlesTerrain.assujettiId,
+        exercice: controlesTerrain.exercice,
         dataConstateeIdentification: controlesTerrain.dataConstateeIdentification,
       })
       .from(controlesTerrain)
@@ -235,6 +237,15 @@ export async function approveControlAction(controleId: string): Promise<
         .where(eq(controlesTerrain.id, controleId));
     });
 
+    await logAdminAction({
+      userId: session.user.userId,
+      action: "controle.admin_approve",
+      targetType: "controle_terrain",
+      targetId: controleId,
+      summary: `Assujetti ${row.assujettiId} — exercice ${row.exercice} — fusion données terrain`,
+      metadata: { assujettiId: row.assujettiId, exercice: row.exercice },
+    });
+
     return { success: true };
   } catch (e) {
     console.error("approveControl error:", e);
@@ -252,7 +263,10 @@ export async function rejectControlAction(controleId: string): Promise<
 
   try {
     const [row] = await db
-      .select({ assujettiId: controlesTerrain.assujettiId })
+      .select({
+        assujettiId: controlesTerrain.assujettiId,
+        exercice: controlesTerrain.exercice,
+      })
       .from(controlesTerrain)
       .where(and(eq(controlesTerrain.id, controleId), eq(controlesTerrain.statutValidationAdmin, "pending")))
       .limit(1);
@@ -273,6 +287,15 @@ export async function rejectControlAction(controleId: string): Promise<
           updatedAt: new Date(),
         })
         .where(eq(assujettis.id, row.assujettiId));
+    });
+
+    await logAdminAction({
+      userId: session.user.userId,
+      action: "controle.admin_reject",
+      targetType: "controle_terrain",
+      targetId: controleId,
+      summary: `Assujetti ${row.assujettiId} — exercice ${row.exercice} — rejet validation`,
+      metadata: { assujettiId: row.assujettiId, exercice: row.exercice },
     });
 
     return { success: true };

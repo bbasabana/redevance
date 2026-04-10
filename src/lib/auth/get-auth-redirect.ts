@@ -19,7 +19,7 @@ export async function getAuthRedirect(user: any, isVerified: boolean = false): P
         if (!user.twoFactorEnabled) {
             return '/panel/setup-2fa';
         }
-        return '/admin/dashboard'; // Assuming admin dashboard path
+        return "/x-rtnc-management-safe";
     }
 
 

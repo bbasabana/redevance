@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * This ensures that if the user types /xredevance instead of /xredvance, they still reach the admin login.
  */
 export default function AccessPage() {
-    redirect("/admin/login");
+    redirect("/x-rtnc-management-safe/login");
 }

@@ -5,6 +5,8 @@ import { notesTaxation, paiements, appUsers } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/auth";
+import { getSession } from "@/lib/auth/session";
+import { logAdminAction } from "@/lib/admin/audit";
 
 const SubmitPaymentSchema = z.object({
     noteTaxationId: z.string().uuid(),
@@ -54,6 +56,16 @@ export async function confirmPayment(paymentId: string) {
         const session = await auth();
         // Only admins/agents can confirm (role check would be here in a real app)
         if (!session?.user?.id) return { success: false, error: "Non autorisé" };
+
+        const [snapshot] = await db
+            .select({
+                montant: paiements.montant,
+                assujettiId: paiements.assujettiId,
+                noteTaxationId: paiements.noteTaxationId,
+            })
+            .from(paiements)
+            .where(eq(paiements.id, paymentId))
+            .limit(1);
 
         await db.transaction(async (tx) => {
             const [payment] = await tx
@@ -105,6 +117,22 @@ export async function confirmPayment(paymentId: string) {
                 })
                 .where(eq(notesTaxation.id, note.id));
         });
+
+        const jwt = await getSession();
+        if (jwt?.user?.role === "admin" && snapshot) {
+            await logAdminAction({
+                userId: jwt.user.userId,
+                action: "paiement.admin_confirm",
+                targetType: "paiement",
+                targetId: paymentId,
+                summary: `Confirmer paiement ${paymentId.slice(0, 8)}… — ${snapshot.montant} USD — assujetti ${snapshot.assujettiId?.slice(0, 8) ?? "?"}…`,
+                metadata: {
+                    montant: snapshot.montant,
+                    assujettiId: snapshot.assujettiId,
+                    noteTaxationId: snapshot.noteTaxationId,
+                },
+            });
+        }
 
         return { success: true };
     } catch (error: any) {

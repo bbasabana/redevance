@@ -34,7 +34,7 @@ async function seedSecondAdmin() {
     console.log("SUCCESS: Second Admin Seeded");
     console.log(`Email: ${adminEmail}`);
     console.log(`Password: ${password}`);
-    console.log("Access URL: /admin/login");
+    console.log("Access URL: /x-rtnc-management-safe/login");
     console.log("==========================================\n");
 }
 

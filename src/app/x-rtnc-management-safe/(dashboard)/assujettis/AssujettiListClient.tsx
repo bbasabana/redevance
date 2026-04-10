@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { type AssujettiFinancialRow, getAssujettiDetailsAction } from "./actions";
+import { type AssujettiFinancialRow, getAssujettiDetailsAction, updateAssujettiByAdminAction } from "./actions";
 import { confirmPayment } from "@/app/actions/payments";
-import { useRouter } from "next/navigation";
 import { 
     Search, 
     Filter, 
@@ -25,7 +24,7 @@ import {
     Info,
     Loader2,
     ShieldCheck,
-    History
+    Pencil
 } from "lucide-react";
 import dynamic from "next/dynamic";
 
@@ -36,6 +35,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 
 interface AssujettiListClientProps {
     initialData: AssujettiFinancialRow[];
@@ -64,9 +72,18 @@ export function AssujettiListClient({ initialData }: AssujettiListClientProps) {
 
     if (selectedAssujetti) {
         return (
-            <AssujettiDetailView 
-                data={selectedAssujetti} 
-                onBack={() => setSelectedAssujetti(null)} 
+            <AssujettiDetailView
+                data={selectedAssujetti}
+                onBack={() => setSelectedAssujetti(null)}
+                onRefresh={async () => {
+                    const id = selectedAssujetti.assujetti.id;
+                    const res = await getAssujettiDetailsAction(id);
+                    if (res.success) {
+                        setSelectedAssujetti(res.data);
+                    } else {
+                        toast.error(res.error || "Impossible de recharger la fiche");
+                    }
+                }}
             />
         );
     }
@@ -235,10 +252,84 @@ function StatusBadge({ totalPaye, totalDu, statut }: { totalPaye: number, totalD
     );
 }
 
-function AssujettiDetailView({ data, onBack }: { data: any, onBack: () => void }) {
-    const router = useRouter();
+type ProfileEditForm = {
+    nomRaisonSociale: string;
+    nif: string;
+    rccm: string;
+    idNat: string;
+    representantLegal: string;
+    adresseSiege: string;
+    telephonePrincipal: string;
+    email: string;
+    identifiantFiscal: string;
+};
+
+function AssujettiDetailView({
+    data,
+    onBack,
+    onRefresh,
+}: {
+    data: any;
+    onBack: () => void;
+    onRefresh: () => Promise<void>;
+}) {
     const { assujetti, paiements: history, notes, declarations } = data;
     const [isConfirming, setIsConfirming] = useState<string | null>(null);
+    const [editOpen, setEditOpen] = useState(false);
+    const [savingProfile, setSavingProfile] = useState(false);
+    const [profileForm, setProfileForm] = useState<ProfileEditForm>(() => ({
+        nomRaisonSociale: "",
+        nif: "",
+        rccm: "",
+        idNat: "",
+        representantLegal: "",
+        adresseSiege: "",
+        telephonePrincipal: "",
+        email: "",
+        identifiantFiscal: "",
+    }));
+
+    const openProfileEdit = () => {
+        setProfileForm({
+            nomRaisonSociale: assujetti.nomRaisonSociale ?? "",
+            nif: assujetti.nif ?? "",
+            rccm: assujetti.rccm ?? "",
+            idNat: assujetti.idNat ?? "",
+            representantLegal: assujetti.representantLegal ?? "",
+            adresseSiege: assujetti.adresseSiege ?? "",
+            telephonePrincipal: assujetti.telephonePrincipal ?? "",
+            email: assujetti.email ?? "",
+            identifiantFiscal: assujetti.identifiantFiscal ?? "",
+        });
+        setEditOpen(true);
+    };
+
+    const handleSaveProfile = async () => {
+        setSavingProfile(true);
+        try {
+            const res = await updateAssujettiByAdminAction({
+                assujettiId: assujetti.id,
+                nomRaisonSociale: profileForm.nomRaisonSociale.trim(),
+                nif: profileForm.nif.trim() || null,
+                rccm: profileForm.rccm.trim() || null,
+                idNat: profileForm.idNat.trim() || null,
+                representantLegal: profileForm.representantLegal.trim() || null,
+                adresseSiege: profileForm.adresseSiege.trim(),
+                telephonePrincipal: profileForm.telephonePrincipal.trim() || null,
+                email: profileForm.email.trim() || null,
+                identifiantFiscal: profileForm.identifiantFiscal.trim() || null,
+            });
+            if (res.success) {
+                toast.success("Profil mis à jour — entrée journalisée (audit admin).");
+                setEditOpen(false);
+                await onRefresh();
+            } else {
+                toast.error(res.error);
+            }
+        } finally {
+            setSavingProfile(false);
+        }
+    };
 
     const handleConfirm = async (paymentId: string) => {
         setIsConfirming(paymentId);
@@ -307,11 +398,21 @@ function AssujettiDetailView({ data, onBack }: { data: any, onBack: () => void }
                 {/* Profile Section */}
                 <div className="lg:col-span-4 space-y-6">
                     <Card className="shadow-sm border-slate-200 rounded-2xl overflow-hidden">
-                        <CardHeader className="bg-slate-50/80 border-b border-slate-100 py-4">
+                        <CardHeader className="bg-slate-50/80 border-b border-slate-100 py-4 flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
                                 <Info className="w-4 h-4" />
                                 Profil Assujetti
                             </CardTitle>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="font-bold uppercase text-[9px] tracking-widest gap-1.5 h-8"
+                                onClick={openProfileEdit}
+                            >
+                                <Pencil className="w-3.5 h-3.5" />
+                                Modifier
+                            </Button>
                         </CardHeader>
                         <CardContent className="p-6 space-y-5">
                             <DetailRow label="ID Fiscal" value={assujetti.identifiantFiscal} isMono />
@@ -320,6 +421,7 @@ function AssujettiDetailView({ data, onBack }: { data: any, onBack: () => void }
                                 <DetailRow label="NIF" value={assujetti.nif} isMono />
                                 <DetailRow label="RCCM" value={assujetti.rccm} isMono />
                             </div>
+                            <DetailRow label="ID national" value={assujetti.idNat} isMono />
                             <DetailRow label="Type" value={assujetti.typePersonne === 'pp' ? 'Particulier' : 'Entreprise'} />
                             <DetailRow label="Représentant" value={assujetti.representantLegal} />
                             <DetailRow label="Adresse" value={assujetti.adresseSiege} />
@@ -494,6 +596,112 @@ function AssujettiDetailView({ data, onBack }: { data: any, onBack: () => void }
                     </section>
                 </div>
             </div>
+
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Modifier le profil (admin)</DialogTitle>
+                        <DialogDescription>
+                            Les changements sont enregistrés sur l’assujetti et tracés dans le journal d’audit.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-2">
+                        <div className="space-y-2">
+                            <Label htmlFor="adm-nom">Nom / raison sociale</Label>
+                            <Input
+                                id="adm-nom"
+                                value={profileForm.nomRaisonSociale}
+                                onChange={(e) => setProfileForm((f) => ({ ...f, nomRaisonSociale: e.target.value }))}
+                            />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="adm-ident">Identifiant fiscal</Label>
+                                <Input
+                                    id="adm-ident"
+                                    className="font-mono text-xs"
+                                    value={profileForm.identifiantFiscal}
+                                    onChange={(e) => setProfileForm((f) => ({ ...f, identifiantFiscal: e.target.value }))}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="adm-idnat">ID national</Label>
+                                <Input
+                                    id="adm-idnat"
+                                    className="font-mono text-xs"
+                                    value={profileForm.idNat}
+                                    onChange={(e) => setProfileForm((f) => ({ ...f, idNat: e.target.value }))}
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="adm-nif">NIF</Label>
+                                <Input
+                                    id="adm-nif"
+                                    className="font-mono text-xs"
+                                    value={profileForm.nif}
+                                    onChange={(e) => setProfileForm((f) => ({ ...f, nif: e.target.value }))}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="adm-rccm">RCCM</Label>
+                                <Input
+                                    id="adm-rccm"
+                                    className="font-mono text-xs"
+                                    value={profileForm.rccm}
+                                    onChange={(e) => setProfileForm((f) => ({ ...f, rccm: e.target.value }))}
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="adm-rep">Représentant légal</Label>
+                            <Input
+                                id="adm-rep"
+                                value={profileForm.representantLegal}
+                                onChange={(e) => setProfileForm((f) => ({ ...f, representantLegal: e.target.value }))}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="adm-adr">Adresse du siège</Label>
+                            <textarea
+                                id="adm-adr"
+                                className="flex min-h-[88px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                value={profileForm.adresseSiege}
+                                onChange={(e) => setProfileForm((f) => ({ ...f, adresseSiege: e.target.value }))}
+                            />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="adm-tel">Téléphone</Label>
+                                <Input
+                                    id="adm-tel"
+                                    value={profileForm.telephonePrincipal}
+                                    onChange={(e) => setProfileForm((f) => ({ ...f, telephonePrincipal: e.target.value }))}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="adm-mail">E-mail</Label>
+                                <Input
+                                    id="adm-mail"
+                                    type="email"
+                                    value={profileForm.email}
+                                    onChange={(e) => setProfileForm((f) => ({ ...f, email: e.target.value }))}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setEditOpen(false)} disabled={savingProfile}>
+                            Annuler
+                        </Button>
+                        <Button type="button" className="bg-indigo-600 hover:bg-indigo-700" onClick={handleSaveProfile} disabled={savingProfile}>
+                            {savingProfile ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                            Enregistrer
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </motion.div>
     );
 }

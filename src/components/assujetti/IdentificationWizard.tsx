@@ -97,15 +97,13 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
     });
 
     const isNifValidFormat = (val: string) => /^[A-Z]\d{7,9}$/.test(val);
-    const isRccmValidFormat = (val: string) => /^[A-Z]{2}\/[A-Z0-9\s'’-]+(\/[A-Z0-9\s'’-]+)?\/RCCM:\d{2}-[A-Z]-\d{4,6}$/.test(val);
-    const isIdNatValidFormat = (val: string) => /^[0-9]{1,2}-[0-9]{2}-[A-Z]\s?[0-9]{5}\s?[A-Z]$/.test(val);
 
     // Initial check to see if we should lock fields that came from DB and are valid
     // We only lock if they came from `assujetti` prop AND are valid.
     const [lockedFields, setLockedFields] = useState({
         numeroImpot: !!assujettiNif && isNifValidFormat(assujettiNif),
-        rccm: !!assujettiRccm && isRccmValidFormat(assujettiRccm),
-        idNat: !!assujettiIdNat && isIdNatValidFormat(assujettiIdNat),
+        rccm: !!assujettiRccm.trim(),
+        idNat: !!assujettiIdNat.trim(),
     });
 
     const [uniquenessErrors, setUniquenessErrors] = useState<Record<string, string>>({});
@@ -164,12 +162,12 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                 const res = await checkUniqueness('nif', entityInfo.numeroImpot, assujetti?.id);
                 if (!res.isUnique) newErrors.nif = "Ce NIF est déjà utilisé.";
             }
-            if (entityInfo.rccm && !lockedFields.rccm && isRccmValidFormat(entityInfo.rccm)) {
-                const res = await checkUniqueness('rccm', entityInfo.rccm, assujetti?.id);
+            if (entityInfo.rccm.trim() && !lockedFields.rccm) {
+                const res = await checkUniqueness('rccm', entityInfo.rccm.trim(), assujetti?.id);
                 if (!res.isUnique) newErrors.rccm = "Ce RCCM est déjà utilisé.";
             }
-            if (entityInfo.idNat && !lockedFields.idNat && isIdNatValidFormat(entityInfo.idNat)) {
-                const res = await checkUniqueness('idNat', entityInfo.idNat, assujetti?.id);
+            if (entityInfo.idNat.trim() && !lockedFields.idNat) {
+                const res = await checkUniqueness('idNat', entityInfo.idNat.trim(), assujetti?.id);
                 if (!res.isUnique) newErrors.idNat = "Cet ID NAT est déjà utilisé.";
             }
             setUniquenessErrors(newErrors);
@@ -319,8 +317,6 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                 // Check if any fields came from DB but had INVALID formats. If so, warn the user they need to correct them.
                 const warnings: string[] = [];
                 if (assujettiNif && !lockedFields.numeroImpot) warnings.push("Numéro Impôt (NIF)");
-                if (assujettiRccm && !lockedFields.rccm) warnings.push("RCCM");
-                if (assujettiIdNat && !lockedFields.idNat) warnings.push("ID National (Id. Nat)");
 
                 if (warnings.length > 0) {
                     toast.warning("Corrections requises", {
@@ -344,8 +340,8 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                     }
                 }
                 
-                if (!entityInfo.idNat.trim() || !isIdNatValidFormat(entityInfo.idNat)) {
-                    toast.error("L'Identification Nationale (Id. Nat) est obligatoire et doit être au format valide.", { className: "text-red-500" });
+                if (!entityInfo.idNat.trim()) {
+                    toast.error("L'Identification Nationale (Id. Nat) est obligatoire.", { className: "text-red-500" });
                     return;
                 }
                 if (!representant.trim() || representant.trim().length < 2) {
@@ -773,22 +769,16 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                                     <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">RCCM</Label>
                                                     <Input
                                                         disabled={lockedFields.rccm}
-                                                        placeholder="Ex: CD/TRICOM/L'SHI/RCCM:14-B-1561"
+                                                        placeholder="Ex : CD/KIN/RCCM:14-B-1561"
                                                         value={entityInfo.rccm}
-                                                        onChange={e => setEntityInfo({ ...entityInfo, rccm: e.target.value.toUpperCase() })}
+                                                        onChange={e => setEntityInfo({ ...entityInfo, rccm: e.target.value })}
                                                         className={cn("h-11 bg-slate-50 border-slate-200 rounded-xl text-sm transition-all",
-                                                            lockedFields.rccm && "bg-slate-100 border-none text-slate-700 font-bold",
-                                                            entityInfo.rccm && !lockedFields.rccm && !isRccmValidFormat(entityInfo.rccm) && "border-red-500 bg-red-50 text-red-900 focus-visible:ring-red-500"
+                                                            lockedFields.rccm && "bg-slate-100 border-none text-slate-700 font-bold"
                                                         )}
                                                     />
                                                     {uniquenessErrors.rccm && (
                                                         <motion.p initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-[10px] text-red-500 font-bold uppercase mt-1">
                                                             ⚠️ {uniquenessErrors.rccm}
-                                                        </motion.p>
-                                                    )}
-                                                    {entityInfo.rccm && !lockedFields.rccm && !isRccmValidFormat(entityInfo.rccm) && (
-                                                        <motion.p initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-[9px] text-red-500 font-black uppercase tracking-tight ml-1 leading-tight">
-                                                            Format: CD/[CODE]/RCCM:YY-X-XXXX. Ex: CD/KIN/RCCM:14-B-1561
                                                         </motion.p>
                                                     )}
                                                 </div>
@@ -798,22 +788,16 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                             <Label className="text-[10px] font-black uppercase text-slate-400 ml-1 italic">Identification Nationale (Id. Nat) <span className="text-red-500">*</span></Label>
                                             <Input
                                                 disabled={lockedFields.idNat}
-                                                placeholder="Ex: 6-83-N 85264 K"
+                                                placeholder="Ex : 6-83-N 85264 K (indicatif)"
                                                 value={entityInfo.idNat}
-                                                onChange={e => setEntityInfo({ ...entityInfo, idNat: e.target.value.toUpperCase() })}
+                                                onChange={e => setEntityInfo({ ...entityInfo, idNat: e.target.value })}
                                                 className={cn("h-11 bg-slate-50 border-slate-200 rounded-xl text-sm transition-all",
                                                     lockedFields.idNat && "bg-slate-100 border-none text-slate-700 font-bold",
-                                                    entityInfo.idNat && !lockedFields.idNat && !isIdNatValidFormat(entityInfo.idNat) && "border-red-500 bg-red-50 text-red-900 focus-visible:ring-red-500"
                                                 )}
                                             />
                                             {uniquenessErrors.idNat && (
                                                 <motion.p initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-[10px] text-red-500 font-bold uppercase mt-1">
                                                     ⚠️ {uniquenessErrors.idNat}
-                                                </motion.p>
-                                            )}
-                                            {entityInfo.idNat && !lockedFields.idNat && !isIdNatValidFormat(entityInfo.idNat) && (
-                                                <motion.p initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-[9px] text-red-600 font-black uppercase tracking-tight ml-1 leading-tight">
-                                                    Format invalide. Ex: 01-123-A1234B
                                                 </motion.p>
                                             )}
                                         </div>
@@ -1278,8 +1262,7 @@ export default function IdentificationWizard({ session, assujetti, progress }: {
                                         (hasEstablishment && activities.length === 0) ||
                                         (hasEstablishment && activities.includes("autre") && !autreActivite) ||
                                         (entityInfo.numeroImpot && !lockedFields.numeroImpot && !isNifValidFormat(entityInfo.numeroImpot)) ||
-                                        (entityInfo.rccm && !lockedFields.rccm && !isRccmValidFormat(entityInfo.rccm)) ||
-                                        (entityInfo.idNat && !lockedFields.idNat && !isIdNatValidFormat(entityInfo.idNat))
+                                        !entityInfo.idNat.trim()
                                     ))
                                 }
                                 className="flex-[2] h-12 bg-[#0d2870] text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-900 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-900/20 disabled:opacity-50 disabled:shadow-none disabled:bg-slate-200 disabled:text-slate-400"

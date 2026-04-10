@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * This route redirects to the admin login page.
  */
 export default function AccessPage() {
-    redirect("/admin/login");
+    redirect("/x-rtnc-management-safe/login");
 }

@@ -11,8 +11,8 @@ export default async function PanelDashboardPage() {
 
     const user = session.user as any;
 
-    if (user.userType === "admin") {
-        redirect("/admin/dashboard");
+    if (user.userType === "admin" || user.role === "admin") {
+        redirect("/x-rtnc-management-safe");
     }
 
     if (user.role === "agent") {

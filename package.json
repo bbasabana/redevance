@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "db:migrate:onboarding": "node scripts/run-onboarding-migration.js",
+    "db:migrate:admin-audit": "node scripts/run-admin-audit-migration.js",
     "test:sms": "node scripts/test-sms.js"
   },
   "dependencies": {
