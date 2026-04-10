@@ -5,7 +5,12 @@ import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import dynamic from "next/dynamic";
 
-const inter = Inter({ subsets: ["latin"] });
+// Sans <link rel=preload> : évite l’avertissement Chrome ; @font-face next/font suffit.
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  preload: false,
+});
 
 export const metadata: Metadata = {
   title: "Redevance Audiovisuelle | RTNC",
