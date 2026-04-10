@@ -9,16 +9,12 @@ export async function getAuthRedirect(user: any, isVerified: boolean = false): P
     ];
 
     // ════════════════════════════════════════
-    // BRANCHE ADMIN (If using adminUsers, we treat similarly to AGENTS with mandatory 2FA)
+    // BRANCHE ADMIN (admin_users — console /x-rtnc-management-safe)
     // ════════════════════════════════════════
-    // If the user object passed has a 'superAdmin' field or their userType='admin', handle them:
+    // 2FA non exigée pour l’instant : accès direct après mot de passe (évite verify/setup).
+    // Pour réactiver : si twoFactorEnabled && !isVerified → /panel/verify-2fa ;
+    // si !twoFactorEnabled → /panel/setup-2fa.
     if ("superAdmin" in user || (user as any).userType === "admin") {
-        if (user.twoFactorEnabled && !isVerified) {
-            return '/panel/verify-2fa';
-        }
-        if (!user.twoFactorEnabled) {
-            return '/panel/setup-2fa';
-        }
         return "/x-rtnc-management-safe";
     }
 
